@@ -1,0 +1,6 @@
+{
+  "name": "Arabic Alphabet - أنشطة الحروف العربية التفاعلية",
+  "description": "تطبيق تعليمي عربي تفاعلي لاختيار الطلاب عشوائيًا وتدريبهم على الحروف، مواضعها، الأصوات والمدود الطويلة، مع أنشطة سحب وإفلات وإدارة الكلمات والصور.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
