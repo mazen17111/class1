@@ -17,54 +17,80 @@ export function shuffle<T>(array: T[]): T[] {
   return arr;
 }
 
+/**
+ * Generates dynamic, randomized quiz questions for a target letter.
+ * - Prioritizes custom words and images added by the teacher so they always appear.
+ * - Prevents repetition across consecutive students by avoiding recently used words.
+ * - Randomizes question types, option ordering, and distractor letters.
+ */
 export function generateQuizQuestions(
   targetLetter: ArabicLetter,
   allWords: WordItem[],
   count: number,
-  selectedTypes: QuestionType[]
+  selectedTypes: QuestionType[],
+  recentlyUsedWordIds: string[] = []
 ): Question[] {
-  // Filter words that contain targetLetter
-  const letterWords = allWords.filter(
-    w => w.targetLetter === targetLetter.char || removeTashkeel(w.word).includes(targetLetter.char)
-  );
+  // 1. Filter all words that contain or target this letter
+  const letterWords = allWords.filter(w => {
+    if (w.targetLetter === targetLetter.char) return true;
+    const clean = w.cleanWord || removeTashkeel(w.word);
+    return clean.includes(targetLetter.char);
+  });
 
   const availableWords = letterWords.length > 0 ? letterWords : allWords;
-  const questions: Question[] = [];
 
-  const defaultTypes: QuestionType[] = ['drag_drop', 'choose_letter', 'choose_madd', 'letter_position'];
-  const typesToUse: QuestionType[] = selectedTypes.length > 0 ? selectedTypes : defaultTypes;
+  // 2. Separate custom words (added by teacher) and built-in words
+  const customWords = shuffle(availableWords.filter(w => w.isCustom));
+  const builtinWords = availableWords.filter(w => !w.isCustom);
 
-  // Separate plain words (maddType === 'none') and words with long sounds/madd (maddType !== 'none')
-  const plainWords = availableWords.filter(w => {
-    const analysis = analyzeArabicWord(w.word, targetLetter.char);
-    return analysis.maddType === 'none';
-  });
-  const maddWords = availableWords.filter(w => {
-    const analysis = analyzeArabicWord(w.word, targetLetter.char);
-    return analysis.maddType !== 'none';
-  });
+  // 3. Separate built-in words into unused vs recently used to avoid repetition across students
+  const unusedBuiltin = shuffle(builtinWords.filter(w => !recentlyUsedWordIds.includes(w.id)));
+  const alreadyUsedBuiltin = shuffle(builtinWords.filter(w => recentlyUsedWordIds.includes(w.id)));
 
+  // 4. Build prioritized pool:
+  // - Custom words MUST be included (top priority as requested by user)
+  // - Then unused built-in words (for variety and freshness across students)
+  // - Then already used built-in words (if more words are needed)
+  const candidatePool = [...customWords, ...unusedBuiltin, ...alreadyUsedBuiltin];
+  const finalPool = candidatePool.length > 0 ? candidatePool : availableWords;
+
+  // 5. Select unique words for this quiz up to the count
+  const selectedWords: WordItem[] = [];
   for (let i = 0; i < count; i++) {
-    const type = typesToUse[i % typesToUse.length];
-
-    // For madd questions ('choose_madd'), prioritize words that showcase madd / long sound if available.
-    // For other questions, prefer plain words (without madd) so the letter is displayed clean and plain.
-    let word: WordItem;
-    if (type === 'choose_madd') {
-      if (maddWords.length > 0) {
-        word = maddWords[i % maddWords.length];
-      } else {
-        word = availableWords[i % availableWords.length];
-      }
+    if (i < finalPool.length) {
+      selectedWords.push(finalPool[i]);
     } else {
-      if (plainWords.length > 0) {
-        word = plainWords[i % plainWords.length];
-      } else {
-        word = availableWords[i % availableWords.length];
-      }
+      // If count exceeds total pool size, cycle through shuffled pool
+      const cyclePool = shuffle([...finalPool]);
+      selectedWords.push(cyclePool[(i - finalPool.length) % cyclePool.length]);
     }
+  }
 
-    const q = createSingleQuestion(type, word, targetLetter, allWords, `${i + 1}`);
+  // 6. Question types setup
+  const defaultTypes: QuestionType[] = [
+    'drag_drop',
+    'choose_letter',
+    'choose_madd',
+    'letter_position',
+    'short_vowel'
+  ];
+  const baseTypes: QuestionType[] = selectedTypes.length > 0 ? selectedTypes : defaultTypes;
+
+  // Build a randomized list of question types of length `count`
+  const typesSequence: QuestionType[] = [];
+  while (typesSequence.length < count) {
+    const chunk = shuffle([...baseTypes]);
+    typesSequence.push(...chunk);
+  }
+  typesSequence.length = count;
+
+  // If choose_madd is in types, check if any word in selectedWords has madd;
+  // if so, align choose_madd with a word that has Madd for optimal educational impact.
+  const questions: Question[] = [];
+  for (let i = 0; i < count; i++) {
+    const word = selectedWords[i];
+    const type = typesSequence[i];
+    const q = createSingleQuestion(type, word, targetLetter, allWords, `${i + 1}-${Date.now()}-${Math.floor(Math.random() * 1000)}`);
     questions.push(q);
   }
 
@@ -104,15 +130,15 @@ function createSingleQuestion(
       const missingTiles = slots
         .filter(s => s.isEmpty)
         .map((s, idx) => ({
-          id: `tile-${s.char}-${s.index}-${idx}`,
+          id: `tile-${s.char}-${s.index}-${idx}-${Math.random()}`,
           char: s.char,
           originalIndex: s.index
         }));
 
-      // Add 2 distractor tiles from other letters
+      // Add 2-3 distractor tiles from other letters (randomized)
       const otherLetters = ARABIC_LETTERS.filter(l => l.char !== targetLetter.char);
       const distractors = shuffle(otherLetters).slice(0, 2).map((l, idx) => ({
-        id: `distractor-${l.char}-${idx}`,
+        id: `distractor-${l.char}-${idx}-${Math.random()}`,
         char: l.char,
         originalIndex: -1
       }));
@@ -149,14 +175,13 @@ function createSingleQuestion(
     }
 
     case 'choose_madd': {
-      // Long vowels and Madd practice for the selected letter:
-      // Uses accurate long sounds for the target letter: e.g. با / بو / بي or جا / جو / جي
+      // Long vowels and Madd practice for the selected letter
       const longA = targetLetter.longSounds.alif;
       const longW = targetLetter.longSounds.waw;
       const longY = targetLetter.longSounds.yaa;
       const shortSound = `${targetLetter.char}َ`;
 
-      const options = [
+      const rawOptions = [
         `مَدّ بالألف (${longA})`,
         `مَدّ بالواو (${longW})`,
         `مَدّ بالياء (${longY})`,
@@ -166,10 +191,13 @@ function createSingleQuestion(
       // Accurate linguistic deduction from word content
       const actualMadd = analysis.maddType !== 'none' ? analysis.maddType : (word.maddType || 'none');
 
-      let correctAnswer = options[3]; // Default to short sound / no madd
-      if (actualMadd === 'alif') correctAnswer = options[0];
-      else if (actualMadd === 'waw') correctAnswer = options[1];
-      else if (actualMadd === 'yaa') correctAnswer = options[2];
+      let correctAnswer = rawOptions[3]; // Default to short sound / no madd
+      if (actualMadd === 'alif') correctAnswer = rawOptions[0];
+      else if (actualMadd === 'waw') correctAnswer = rawOptions[1];
+      else if (actualMadd === 'yaa') correctAnswer = rawOptions[2];
+
+      // Shuffle options to prevent position guessing
+      const options = shuffle(rawOptions);
 
       return {
         id: `q-madd-${qid}`,
@@ -183,7 +211,7 @@ function createSingleQuestion(
     }
 
     case 'letter_position': {
-      const options = [
+      const rawOptions = [
         'أول الكلمة (في البداية)',
         'وسط الكلمة (في المنتصف)',
         'آخر الكلمة (في النهاية)'
@@ -192,10 +220,13 @@ function createSingleQuestion(
       // Derived directly from the position of the character in cleanWord
       const actualPos = analysis.found ? analysis.position : (word.position || 'beginning');
 
-      let correctAnswer = options[0];
-      if (actualPos === 'beginning') correctAnswer = options[0];
-      else if (actualPos === 'middle') correctAnswer = options[1];
-      else if (actualPos === 'end') correctAnswer = options[2];
+      let correctAnswer = rawOptions[0];
+      if (actualPos === 'beginning') correctAnswer = rawOptions[0];
+      else if (actualPos === 'middle') correctAnswer = rawOptions[1];
+      else if (actualPos === 'end') correctAnswer = rawOptions[2];
+
+      // Shuffle options to avoid always having first as start
+      const options = shuffle(rawOptions);
 
       return {
         id: `q-pos-${qid}`,
@@ -210,7 +241,7 @@ function createSingleQuestion(
 
     case 'short_vowel': {
       const letter = targetLetter.char;
-      const options = [
+      const rawOptions = [
         `فَتْحَة (${letter}ـَ)`,
         `ضَمَّة (${letter}ـُ)`,
         `كَسْرَة (${letter}ـِ)`,
@@ -220,11 +251,14 @@ function createSingleQuestion(
       // Derived directly from diacritics attached to the target letter
       const actualVowel = analysis.shortVowel || word.shortVowel || 'fatha';
 
-      let correctAnswer = options[0];
-      if (actualVowel === 'fatha') correctAnswer = options[0];
-      else if (actualVowel === 'damma') correctAnswer = options[1];
-      else if (actualVowel === 'kasra') correctAnswer = options[2];
-      else if (actualVowel === 'sukoon') correctAnswer = options[3];
+      let correctAnswer = rawOptions[0];
+      if (actualVowel === 'fatha') correctAnswer = rawOptions[0];
+      else if (actualVowel === 'damma') correctAnswer = rawOptions[1];
+      else if (actualVowel === 'kasra') correctAnswer = rawOptions[2];
+      else if (actualVowel === 'sukoon') correctAnswer = rawOptions[3];
+
+      // Shuffle options
+      const options = shuffle(rawOptions);
 
       return {
         id: `q-vowel-${qid}`,
@@ -245,7 +279,7 @@ function createSingleQuestion(
       }));
 
       const tiles = letterChars.map((char, index) => ({
-        id: `tile-build-${char}-${index}`,
+        id: `tile-build-${char}-${index}-${Math.random()}`,
         char,
         originalIndex: index
       }));

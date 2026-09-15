@@ -28,6 +28,7 @@ export default function App() {
   const [currentLetter, setCurrentLetter] = useState<ArabicLetter | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [quizScore, setQuizScore] = useState<{ score: number; total: number } | null>(null);
+  const [usedWordHistory, setUsedWordHistory] = useState<Record<string, string[]>>({});
 
   // Settings & Modals
   const [isWordManagerOpen, setIsWordManagerOpen] = useState(false);
@@ -98,6 +99,7 @@ export default function App() {
 
   const handleResetRaffleCycle = () => {
     setSelectedStudentIds([]);
+    setUsedWordHistory({});
   };
 
   const handleSelectLetter = (letter: ArabicLetter) => {
@@ -106,13 +108,25 @@ export default function App() {
   };
 
   const handleStartQuiz = (config: QuizConfig) => {
-    // Generate questions
+    // Generate questions avoiding recently used words and prioritizing custom words/images
+    const letterKey = config.letter.char;
+    const historyForLetter = usedWordHistory[letterKey] || [];
+
     const generated = generateQuizQuestions(
       config.letter,
       words,
       config.questionCount,
-      config.selectedTypes
+      config.selectedTypes,
+      historyForLetter
     );
+
+    // Track used words for this letter to prevent repetition for subsequent students
+    const newWordIds = generated.map(q => q.targetWord.id);
+    setUsedWordHistory(prev => ({
+      ...prev,
+      [letterKey]: [...(prev[letterKey] || []), ...newWordIds]
+    }));
+
     setQuestions(generated);
     setStage('quiz_active');
   };
@@ -138,13 +152,24 @@ export default function App() {
 
   const handleRetrySameQuiz = () => {
     if (currentLetter && currentStudent) {
-      // Regenerate or restart
+      // Regenerate fresh, non-repeating questions
+      const letterKey = currentLetter.char;
+      const historyForLetter = usedWordHistory[letterKey] || [];
+
       const generated = generateQuizQuestions(
         currentLetter,
         words,
         questions.length || 5,
-        ['drag_drop', 'choose_letter', 'choose_madd', 'letter_position', 'short_vowel']
+        ['drag_drop', 'choose_letter', 'choose_madd', 'letter_position', 'short_vowel'],
+        historyForLetter
       );
+
+      const newWordIds = generated.map(q => q.targetWord.id);
+      setUsedWordHistory(prev => ({
+        ...prev,
+        [letterKey]: [...(prev[letterKey] || []), ...newWordIds]
+      }));
+
       setQuestions(generated);
       setStage('quiz_active');
     }

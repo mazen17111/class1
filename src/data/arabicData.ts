@@ -374,6 +374,149 @@ export const INITIAL_WORDS: WordItem[] = [
     image: createSvgIllustration('👨‍⚕️', ['#CCFBF1', '#0D9488'], 'طَبِيب'),
     meaning: 'يعالج المرضى'
   },
+  {
+    id: 'w-baa-7',
+    word: 'بَيْتٌ',
+    cleanWord: 'بيت',
+    targetLetter: 'ب',
+    position: 'beginning',
+    maddType: 'none',
+    shortVowel: 'fatha',
+    image: createSvgIllustration('🏠', ['#FEF08A', '#EAB308'], 'بَيْت'),
+    meaning: 'منزل نسكن فيه'
+  },
+  {
+    id: 'w-baa-8',
+    word: 'بُرْتُقَالٌ',
+    cleanWord: 'برتقال',
+    targetLetter: 'ب',
+    position: 'beginning',
+    maddType: 'none',
+    shortVowel: 'damma',
+    image: createSvgIllustration('🍊', ['#FED7AA', '#F97316'], 'بُرْتُقَال'),
+    meaning: 'فاكهة لذيذة غنية بالفيتامينات'
+  },
+  {
+    id: 'w-baa-9',
+    word: 'بِنْتٌ',
+    cleanWord: 'بنت',
+    targetLetter: 'ب',
+    position: 'beginning',
+    maddType: 'none',
+    shortVowel: 'kasra',
+    image: createSvgIllustration('👧', ['#FBCFE8', '#DB2777'], 'بِنْت'),
+    meaning: 'فتاة صغيرة مهذبة'
+  },
+  {
+    id: 'w-baa-10',
+    word: 'بَحْرٌ',
+    cleanWord: 'بحر',
+    targetLetter: 'ب',
+    position: 'beginning',
+    maddType: 'none',
+    shortVowel: 'fatha',
+    image: createSvgIllustration('🌊', ['#BAE6FD', '#0284C7'], 'بَحْر'),
+    meaning: 'ماء واسع وأمواج جميلة'
+  },
+  {
+    id: 'w-baa-11',
+    word: 'كِتَابٌ',
+    cleanWord: 'كتاب',
+    targetLetter: 'ب',
+    position: 'end',
+    maddType: 'none',
+    shortVowel: 'damma',
+    image: createSvgIllustration('📖', ['#DDD6FE', '#7C3AED'], 'كِتَاب'),
+    meaning: 'نقرأ فيه لنتعلم'
+  },
+  {
+    id: 'w-baa-12',
+    word: 'خُبْزٌ',
+    cleanWord: 'خبز',
+    targetLetter: 'ب',
+    position: 'middle',
+    maddType: 'none',
+    shortVowel: 'sukoon',
+    image: createSvgIllustration('🍞', ['#FEF3C7', '#D97706'], 'خُبْز'),
+    meaning: 'غذاء يومي لذيذ'
+  },
+  {
+    id: 'w-baa-13',
+    word: 'عِنَبٌ',
+    cleanWord: 'عنب',
+    targetLetter: 'ب',
+    position: 'end',
+    maddType: 'none',
+    shortVowel: 'damma',
+    image: createSvgIllustration('🍇', ['#E9D5FF', '#9333EA'], 'عِنَب'),
+    meaning: 'فاكهة صيفية حلوة'
+  },
+  {
+    id: 'w-baa-14',
+    word: 'قَلْبٌ',
+    cleanWord: 'قلب',
+    targetLetter: 'ب',
+    position: 'end',
+    maddType: 'none',
+    shortVowel: 'damma',
+    image: createSvgIllustration('❤️', ['#FECDD3', '#E11D48'], 'قَلْب'),
+    meaning: 'ينبض بالحياة والمحبة'
+  },
+  {
+    id: 'w-baa-15',
+    word: 'لَبَنٌ',
+    cleanWord: 'لبن',
+    targetLetter: 'ب',
+    position: 'middle',
+    maddType: 'none',
+    shortVowel: 'fatha',
+    image: createSvgIllustration('🥛', ['#F1F5F9', '#64748B'], 'لَبَن'),
+    meaning: 'مشروب صحي ومفيد'
+  },
+  {
+    id: 'w-baa-16',
+    word: 'صَابُونٌ',
+    cleanWord: 'صابون',
+    targetLetter: 'ب',
+    position: 'middle',
+    maddType: 'waw', // صَابُو... مد بالواو بعد الباء المضمومة
+    shortVowel: 'damma',
+    image: createSvgIllustration('🧼', ['#CFFAFE', '#0891B2'], 'صَابُون'),
+    meaning: 'نغسل به أيدينا لنحافظ على النظافة'
+  },
+  {
+    id: 'w-baa-17',
+    word: 'حَقِيبَةٌ',
+    cleanWord: 'حقيبة',
+    targetLetter: 'ب',
+    position: 'middle',
+    maddType: 'none',
+    shortVowel: 'fatha',
+    image: createSvgIllustration('🎒', ['#FDE68A', '#D97706'], 'حَقِيبَة'),
+    meaning: 'نضع فيها كتبنا وأدواتنا'
+  },
+  {
+    id: 'w-baa-18',
+    word: 'قُبَّعَةٌ',
+    cleanWord: 'قبعة',
+    targetLetter: 'ب',
+    position: 'middle',
+    maddType: 'none',
+    shortVowel: 'fatha',
+    image: createSvgIllustration('🧢', ['#BFDBFE', '#2563EB'], 'قُبَّعَة'),
+    meaning: 'نرتديها على الرأس للحماية من الشمس'
+  },
+  {
+    id: 'w-baa-19',
+    word: 'بَقَرَةٌ',
+    cleanWord: 'بقرة',
+    targetLetter: 'ب',
+    position: 'beginning',
+    maddType: 'none',
+    shortVowel: 'fatha',
+    image: createSvgIllustration('🐮', ['#F5F5F4', '#57534E'], 'بَقَرَة'),
+    meaning: 'حيوان أليف يعطينا الحليب'
+  },
 
   // ت
   {

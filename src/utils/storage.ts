@@ -33,9 +33,9 @@ export function loadWords(): WordItem[] {
     if (data) {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Merge with built-in words to ensure no default words are missed
+        // Merge custom words first so they take precedence
         const customOnly = parsed.filter((item: WordItem) => item.isCustom);
-        return [...INITIAL_WORDS, ...customOnly];
+        return [...customOnly, ...INITIAL_WORDS];
       }
     }
   } catch (e) {
@@ -46,7 +46,12 @@ export function loadWords(): WordItem[] {
 
 export function saveCustomWord(newWord: WordItem): WordItem[] {
   const currentWords = loadWords();
-  const updated = [newWord, ...currentWords];
+  const customTagged: WordItem = {
+    ...newWord,
+    isCustom: true,
+  };
+  const withoutNew = currentWords.filter(w => w.id !== newWord.id);
+  const updated = [customTagged, ...withoutNew];
   try {
     // Only store custom words in localStorage to save quota and preserve updates
     const customWords = updated.filter(w => w.isCustom);

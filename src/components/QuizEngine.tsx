@@ -345,6 +345,11 @@ export const QuizEngine: React.FC<QuizEngineProps> = ({
                 alt={currentQuestion.targetWord.word}
                 className="w-48 h-36 sm:w-56 sm:h-42 object-contain rounded-2xl bg-white shadow-md p-2 border border-amber-100"
               />
+              {currentQuestion.targetWord.isCustom && (
+                <div className="absolute -top-2.5 -right-2.5 px-3 py-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-full text-xs font-black shadow-md flex items-center gap-1 border border-white">
+                  <span>⭐ كلمة وصورة مضافة</span>
+                </div>
+              )}
               <button
                 onClick={speakCurrentWord}
                 title="استمع لنطق الكلمة"

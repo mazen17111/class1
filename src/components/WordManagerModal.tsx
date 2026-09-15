@@ -6,6 +6,7 @@ import {
 import { ArabicLetter, LetterPosition, MaddType, ShortVowel, WordItem } from '../types';
 import { ARABIC_LETTERS, createSvgIllustration } from '../data/arabicData';
 import { removeTashkeel } from '../utils/questionGenerator';
+import { analyzeArabicWord } from '../utils/arabicAnalyzer';
 import { sound } from '../utils/audio';
 
 interface WordManagerModalProps {
@@ -41,7 +42,7 @@ export const WordManagerModal: React.FC<WordManagerModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Handle local file image upload
+  // Handle local file image upload with smooth canvas compression
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -51,12 +52,45 @@ export const WordManagerModal: React.FC<WordManagerModalProps> = ({
       return;
     }
 
-    // Read as Base64 Data URL
     const reader = new FileReader();
     reader.onload = () => {
-      setImagePreview(reader.result as string);
-      setImageError('');
-      sound.playSuccess();
+      const img = new Image();
+      img.onload = () => {
+        // Resize image to max 480x480 to keep localStorage ultra lightweight and fast
+        const maxDim = 480;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          setImagePreview(compressedDataUrl);
+          setImageError('');
+          sound.playSuccess();
+        } else {
+          setImagePreview(reader.result as string);
+          setImageError('');
+          sound.playSuccess();
+        }
+      };
+      img.onerror = () => {
+        setImagePreview(reader.result as string);
+        setImageError('');
+        sound.playSuccess();
+      };
+      img.src = reader.result as string;
     };
     reader.onerror = () => {
       setImageError('حدث خطأ أثناء قراءة الصورة من الجهاز.');
@@ -72,25 +106,52 @@ export const WordManagerModal: React.FC<WordManagerModalProps> = ({
     setImageError('');
   };
 
+  // When word text or target letter changes, auto-detect position, madd, and vowels
+  const handleWordTextChange = (text: string) => {
+    setNewWordText(text);
+    if (text.trim().length > 0) {
+      const analysis = analyzeArabicWord(text.trim(), targetLetter);
+      if (analysis.found) {
+        setPosition(analysis.position);
+        setMaddType(analysis.maddType);
+        setShortVowel(analysis.shortVowel);
+      }
+    }
+  };
+
+  const handleTargetLetterChange = (letter: string) => {
+    setTargetLetter(letter);
+    if (newWordText.trim().length > 0) {
+      const analysis = analyzeArabicWord(newWordText.trim(), letter);
+      if (analysis.found) {
+        setPosition(analysis.position);
+        setMaddType(analysis.maddType);
+        setShortVowel(analysis.shortVowel);
+      }
+    }
+  };
+
   const handleSaveWord = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newWordText.trim()) return;
 
-    if (!imagePreview) {
-      // If no image uploaded, provide a clean default illustration
-      const fallbackSvg = createSvgIllustration('📖', ['#BAE6FD', '#0284C7'], newWordText.trim());
-      setImagePreview(fallbackSvg);
-    }
+    // Run linguistic analysis for optimal question generation accuracy
+    const autoAnalysis = analyzeArabicWord(newWordText.trim(), targetLetter);
+    const finalPosition = autoAnalysis.found ? autoAnalysis.position : position;
+    const finalMadd = maddType !== 'none' ? maddType : (autoAnalysis.maddType || 'none');
+    const finalVowel = shortVowel || autoAnalysis.shortVowel || 'fatha';
+
+    const finalImage = imagePreview || createSvgIllustration('📖', ['#BAE6FD', '#0284C7'], newWordText.trim());
 
     const newItem: WordItem = {
-      id: `custom-${Date.now()}`,
+      id: `custom-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       word: newWordText.trim(),
       cleanWord: removeTashkeel(newWordText.trim()),
       targetLetter,
-      position,
-      maddType,
-      shortVowel,
-      image: imagePreview || createSvgIllustration('📖', ['#BAE6FD', '#0284C7'], newWordText.trim()),
+      position: finalPosition,
+      maddType: finalMadd,
+      shortVowel: finalVowel,
+      image: finalImage,
       meaning: meaning.trim() || undefined,
       isCustom: true,
     };
@@ -293,8 +354,8 @@ export const WordManagerModal: React.FC<WordManagerModalProps> = ({
                     type="text"
                     required
                     value={newWordText}
-                    onChange={(e) => setNewWordText(e.target.value)}
-                    placeholder="مثال: غَزَالٌ أو بَابٌ"
+                    onChange={(e) => handleWordTextChange(e.target.value)}
+                    placeholder="مثال: بَابٌ، بَقَرَةٌ، بُرْتُقَالٌ"
                     className="w-full px-4 py-3 rounded-2xl border-2 border-slate-200 bg-slate-50 font-bold text-lg focus:border-amber-500 focus:bg-white focus:outline-hidden"
                   />
                 </div>
@@ -305,7 +366,7 @@ export const WordManagerModal: React.FC<WordManagerModalProps> = ({
                   </label>
                   <select
                     value={targetLetter}
-                    onChange={(e) => setTargetLetter(e.target.value)}
+                    onChange={(e) => handleTargetLetterChange(e.target.value)}
                     className="w-full px-4 py-3 rounded-2xl border-2 border-slate-200 bg-slate-50 font-black text-lg focus:border-amber-500 focus:bg-white focus:outline-hidden"
                   >
                     {ARABIC_LETTERS.map((l) => (
@@ -315,6 +376,14 @@ export const WordManagerModal: React.FC<WordManagerModalProps> = ({
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Informative notification about custom content inclusion */}
+              <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-2xl flex items-center gap-2 text-xs font-bold text-emerald-800">
+                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  ستظهر هذه الكلمة والصورة تلقائياً كأولوية في تدريبات حرف ({targetLetter}) ولن تتكرر الأسئلة لطلابك في القرعة.
+                </span>
               </div>
 
               {/* 2. Position & Madd Type & Short Vowel */}
