@@ -6,6 +6,7 @@ import { ActivitySetup } from './components/ActivitySetup';
 import { QuizEngine } from './components/QuizEngine';
 import { QuizResultModal } from './components/QuizResultModal';
 import { WordManagerModal } from './components/WordManagerModal';
+import { SecretLockScreen } from './components/SecretLockScreen';
 import { 
   AppStage, ArabicLetter, Question, QuizConfig, Student, WordItem 
 } from './types';
@@ -33,6 +34,21 @@ export default function App() {
   // Settings & Modals
   const [isWordManagerOpen, setIsWordManagerOpen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+
+  // Secret 404 Disguise & Lock screen state
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
+    return sessionStorage.getItem('platform_secret_unlocked') === 'true';
+  });
+
+  const handleUnlock = () => {
+    sessionStorage.setItem('platform_secret_unlocked', 'true');
+    setIsUnlocked(true);
+  };
+
+  const handleLock = () => {
+    sessionStorage.removeItem('platform_secret_unlocked');
+    setIsUnlocked(false);
+  };
 
   // Initialize data from storage
   useEffect(() => {
@@ -175,6 +191,10 @@ export default function App() {
     }
   };
 
+  if (!isUnlocked) {
+    return <SecretLockScreen onUnlock={handleUnlock} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-amber-200">
       
@@ -187,6 +207,7 @@ export default function App() {
         onResetToStudents={handleResetToStudents}
         soundEnabled={soundEnabled}
         onToggleSound={handleToggleSound}
+        onLock={handleLock}
       />
 
       {/* Stage Step Indicator Banner */}

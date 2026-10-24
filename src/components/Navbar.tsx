@@ -1,5 +1,5 @@
 import React from 'react';
-import { Volume2, VolumeX, ImagePlus, RotateCcw, Sparkles } from 'lucide-react';
+import { Volume2, VolumeX, ImagePlus, RotateCcw, Sparkles, Lock } from 'lucide-react';
 import { sound } from '../utils/audio';
 import { AppStage, Student, ArabicLetter } from '../types';
 
@@ -11,6 +11,7 @@ interface NavbarProps {
   onResetToStudents: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
+  onLock: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -21,6 +22,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onResetToStudents,
   soundEnabled,
   onToggleSound,
+  onLock,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-amber-100 shadow-xs">
@@ -62,6 +64,16 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
+          {/* Lock Screen toggle */}
+          <button
+            id="btn-lock-screen"
+            onClick={onLock}
+            title="قفل المنصة (شاشة 404)"
+            className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 active:scale-95 transition-all text-slate-500 hover:text-slate-700"
+          >
+            <Lock className="w-5 h-5" />
+          </button>
+
           {/* Sound toggle */}
           <button
             id="btn-toggle-sound"
