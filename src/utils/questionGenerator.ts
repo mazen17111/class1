@@ -189,7 +189,9 @@ function createSingleQuestion(
       ];
 
       // Accurate linguistic deduction from word content
-      const actualMadd = analysis.maddType !== 'none' ? analysis.maddType : (word.maddType || 'none');
+      const actualMadd = (word.maddType !== undefined && word.maddType !== null)
+        ? word.maddType
+        : analysis.maddType;
 
       let correctAnswer = rawOptions[3]; // Default to short sound / no madd
       if (actualMadd === 'alif') correctAnswer = rawOptions[0];
@@ -249,7 +251,9 @@ function createSingleQuestion(
       ];
 
       // Derived directly from diacritics attached to the target letter
-      const actualVowel = analysis.shortVowel || word.shortVowel || 'fatha';
+      const actualVowel = (word.shortVowel !== undefined && word.shortVowel !== null)
+        ? word.shortVowel
+        : (analysis.shortVowel || 'fatha');
 
       let correctAnswer = rawOptions[0];
       if (actualVowel === 'fatha') correctAnswer = rawOptions[0];

@@ -6,7 +6,6 @@ import { ActivitySetup } from './components/ActivitySetup';
 import { QuizEngine } from './components/QuizEngine';
 import { QuizResultModal } from './components/QuizResultModal';
 import { WordManagerModal } from './components/WordManagerModal';
-import { SecretLockScreen } from './components/SecretLockScreen';
 import { 
   AppStage, ArabicLetter, Question, QuizConfig, Student, WordItem 
 } from './types';
@@ -34,21 +33,6 @@ export default function App() {
   // Settings & Modals
   const [isWordManagerOpen, setIsWordManagerOpen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
-
-  // Secret 404 Disguise & Lock screen state
-  const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
-    return sessionStorage.getItem('platform_secret_unlocked') === 'true';
-  });
-
-  const handleUnlock = () => {
-    sessionStorage.setItem('platform_secret_unlocked', 'true');
-    setIsUnlocked(true);
-  };
-
-  const handleLock = () => {
-    sessionStorage.removeItem('platform_secret_unlocked');
-    setIsUnlocked(false);
-  };
 
   // Initialize data from storage
   useEffect(() => {
@@ -191,10 +175,6 @@ export default function App() {
     }
   };
 
-  if (!isUnlocked) {
-    return <SecretLockScreen onUnlock={handleUnlock} />;
-  }
-
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-amber-200">
       
@@ -207,7 +187,6 @@ export default function App() {
         onResetToStudents={handleResetToStudents}
         soundEnabled={soundEnabled}
         onToggleSound={handleToggleSound}
-        onLock={handleLock}
       />
 
       {/* Stage Step Indicator Banner */}
@@ -305,8 +284,17 @@ export default function App() {
       />
 
       {/* Footer */}
-      <footer className="py-4 text-center text-xs text-slate-400 border-t border-slate-200/60 bg-white">
-        تطبيق أنشطة الحروف العربية التفاعلية • مصمم خصيصًا للأطفال والمدارس والسبورات الذكية
+      <footer className="py-5 text-center text-xs text-slate-500 border-t border-slate-200/80 bg-white">
+        <div className="max-w-4xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2 font-bold">
+          <div className="flex items-center gap-2 text-slate-700">
+            <span>🌟 أبطال الصف الأول</span>
+            <span className="text-slate-300">•</span>
+            <span className="text-orange-600 font-black">بقيادة المعلم وائل حمدي 👨‍🏫</span>
+          </div>
+          <div className="text-slate-400 font-medium">
+            أنشطة الحروف والمدود التفاعلية • مخصص للسبورات الذكية والفصول المتميزة
+          </div>
+        </div>
       </footer>
     </div>
   );

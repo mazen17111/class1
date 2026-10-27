@@ -186,10 +186,10 @@ export const WordManagerModal: React.FC<WordManagerModalProps> = ({
             </div>
             <div>
               <h3 className="text-xl sm:text-2xl font-black">
-                إدارة الكلمات والصور التعليمية 📚
+                إدارة الكلمات والصور • فصل المعلم وائل حمدي 📚
               </h3>
-              <p className="text-xs sm:text-sm text-amber-100">
-                قاعدة كلمات الحروف والمدود وإمكانية رفع صور جديدة من الجهاز
+              <p className="text-xs sm:text-sm text-amber-100 font-medium">
+                بنك الكلمات والصور المخصصة لأنشطة أبطال الصف الأول بقيادة المعلم وائل حمدي
               </p>
             </div>
           </div>

@@ -290,7 +290,9 @@ export const QuizEngine: React.FC<QuizEngineProps> = ({
               {student.name.charAt(0)}
             </div>
             <div>
-              <span className="text-xs text-slate-400 font-semibold block">البطل المشارك:</span>
+              <div className="flex items-center gap-1.5 text-xs text-orange-600 font-bold mb-0.5">
+                <span>👨‍🏫 فصل المعلم وائل حمدي</span>
+              </div>
               <span className="text-lg font-black text-slate-800">{student.name}</span>
             </div>
           </div>
@@ -328,9 +330,11 @@ export const QuizEngine: React.FC<QuizEngineProps> = ({
         
         {/* Question Prompt */}
         <div className="text-center mb-6">
-          <span className="inline-block px-4 py-1 rounded-full bg-amber-100 text-amber-900 font-extrabold text-sm mb-2">
-            نشاط حرف ({letter.char})
-          </span>
+          <div className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-amber-100 text-amber-900 font-extrabold text-sm mb-2 border border-amber-200">
+            <span>نشاط حرف ({letter.char})</span>
+            <span>•</span>
+            <span className="text-orange-700">إشراف المعلم وائل حمدي</span>
+          </div>
           <h3 className="text-2xl sm:text-3xl font-black text-slate-900 leading-snug">
             {currentQuestion.prompt}
           </h3>

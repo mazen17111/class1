@@ -1,5 +1,5 @@
 import React from 'react';
-import { Volume2, VolumeX, ImagePlus, RotateCcw, Sparkles, Lock } from 'lucide-react';
+import { Volume2, VolumeX, ImagePlus, RotateCcw, Sparkles } from 'lucide-react';
 import { sound } from '../utils/audio';
 import { AppStage, Student, ArabicLetter } from '../types';
 
@@ -11,7 +11,6 @@ interface NavbarProps {
   onResetToStudents: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
-  onLock: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -22,7 +21,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onResetToStudents,
   soundEnabled,
   onToggleSound,
-  onLock,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-amber-100 shadow-xs">
@@ -30,50 +28,49 @@ export const Navbar: React.FC<NavbarProps> = ({
         
         {/* App Title & Logo */}
         <div className="flex items-center gap-3 cursor-pointer" onClick={onResetToStudents}>
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-md shadow-orange-500/20 font-black text-2xl">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 flex items-center justify-center text-white shadow-md shadow-orange-500/25 font-black text-2xl shrink-0">
             ض
           </div>
           <div>
             <h1 className="text-xl sm:text-2xl font-black bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 bg-clip-text text-transparent">
               أبطال الصف الأول 🌟
             </h1>
-            <p className="text-xs font-bold text-orange-600 hidden sm:block">
-              بقيادة المعلم وائل حمدي • أنشطة الحروف والمدود التفاعلية
+            <p className="text-xs sm:text-sm font-black text-orange-600 flex items-center gap-1.5">
+              <span>بقيادة المعلم وائل حمدي</span>
+              <span className="hidden md:inline text-amber-400">•</span>
+              <span className="hidden md:inline text-slate-500 font-semibold text-xs">أنشطة الحروف والمدود</span>
             </p>
           </div>
         </div>
 
-        {/* Current status chip */}
-        {currentStudent && (
-          <div className="hidden md:flex items-center gap-2 bg-amber-50 border border-amber-200/80 px-3 py-1.5 rounded-full text-sm">
-            <span className="text-amber-800 font-semibold">الطالب:</span>
-            <span className="font-black text-amber-950 px-2 py-0.5 bg-amber-200/60 rounded-full">
-              {currentStudent.name}
-            </span>
-            {currentLetter && (
-              <>
-                <span className="text-amber-400">|</span>
-                <span className="text-amber-800 font-semibold">الحرف:</span>
-                <span className="font-black text-orange-600 text-base bg-orange-100 px-2 py-0.5 rounded-full">
-                  ({currentLetter.char})
-                </span>
-              </>
-            )}
+        {/* Teacher & Current status chip */}
+        <div className="hidden lg:flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-200/90 px-3.5 py-1.5 rounded-full text-xs sm:text-sm shadow-xs">
+            <span className="text-base">👨‍🏫</span>
+            <span className="text-orange-950 font-black">المعلم وائل حمدي</span>
           </div>
-        )}
+
+          {currentStudent && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200/80 px-3 py-1.5 rounded-full text-sm">
+              <span className="text-amber-800 font-semibold">الطالب:</span>
+              <span className="font-black text-amber-950 px-2 py-0.5 bg-amber-200/60 rounded-full">
+                {currentStudent.name}
+              </span>
+              {currentLetter && (
+                <>
+                  <span className="text-amber-400">|</span>
+                  <span className="text-amber-800 font-semibold">الحرف:</span>
+                  <span className="font-black text-orange-600 text-base bg-orange-100 px-2 py-0.5 rounded-full">
+                    ({currentLetter.char})
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
-          {/* Lock Screen toggle */}
-          <button
-            id="btn-lock-screen"
-            onClick={onLock}
-            title="قفل المنصة (شاشة 404)"
-            className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 active:scale-95 transition-all text-slate-500 hover:text-slate-700"
-          >
-            <Lock className="w-5 h-5" />
-          </button>
-
           {/* Sound toggle */}
           <button
             id="btn-toggle-sound"

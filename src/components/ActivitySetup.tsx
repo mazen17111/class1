@@ -95,9 +95,12 @@ export const ActivitySetup: React.FC<ActivitySetupProps> = ({
           <span>تغيير الحرف ({letter.char})</span>
         </button>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 px-3 py-1 rounded-xl text-xs font-black text-orange-800">
+            <span>👨‍🏫 المعلم وائل حمدي</span>
+          </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-semibold">الطالب:</span>
+            <span className="text-xs text-slate-500 font-semibold">بطل النشاط:</span>
             <span className="font-black text-slate-900 bg-slate-100 px-3 py-1 rounded-xl">
               {student.name}
             </span>
@@ -260,7 +263,7 @@ export const ActivitySetup: React.FC<ActivitySetupProps> = ({
           className="w-full sm:w-auto px-12 py-5 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-3xl font-black text-2xl shadow-xl shadow-teal-500/30 hover:shadow-2xl active:scale-95 transition-all inline-flex items-center justify-center gap-4"
         >
           <Play className="w-8 h-8 fill-current" />
-          <span>ابدأ النشاط الآن مع ({student.name}) 🎯</span>
+          <span>ابدأ النشاط مع ({student.name}) • فصل المعلم وائل حمدي 🎯</span>
         </button>
       </div>
     </div>

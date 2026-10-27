@@ -52,7 +52,9 @@ export const LetterPicker: React.FC<LetterPickerProps> = ({
             {student.name.charAt(0)}
           </div>
           <div>
-            <div className="text-xs text-slate-500 font-semibold">بطل النشاط الحالي:</div>
+            <div className="text-xs text-orange-600 font-bold flex items-center gap-1">
+              <span>👨‍🏫 فصل المعلم وائل حمدي</span>
+            </div>
             <div className="text-xl font-black text-slate-900">{student.name}</div>
           </div>
         </div>
@@ -65,11 +67,14 @@ export const LetterPicker: React.FC<LetterPickerProps> = ({
 
       {/* Main Title */}
       <div className="text-center mb-8">
+        <div className="inline-block px-4 py-1.5 bg-orange-100 text-orange-800 rounded-full text-xs font-black mb-2 border border-orange-200">
+          بقيادة المعلم وائل حمدي 🌟
+        </div>
         <h2 className="text-3xl sm:text-4xl font-black text-slate-900 mb-2">
           اختر الحرف المطلوب للنشاط 🔤
         </h2>
         <p className="text-slate-600 text-base sm:text-lg max-w-xl mx-auto">
-          اضغط على أي حرف من الحروف العربية من الألف إلى الياء لبدء تدريبات وتمارين هذا الحرف مع <strong>{student.name}</strong>.
+          اضغط على أي حرف من الحروف العربية لبدء تدريبات وتمارين الحرف مع البطل <strong>{student.name}</strong> في فصل المعلم وائل حمدي.
         </p>
       </div>
 
@@ -146,6 +151,15 @@ export const LetterPicker: React.FC<LetterPickerProps> = ({
           </button>
         </div>
       )}
+
+      {/* Teacher Guidance Note */}
+      <div className="mt-8 p-4 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex items-center justify-between gap-3 text-xs sm:text-sm text-amber-900 font-bold flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">👨‍🏫</span>
+          <span>إشراف وتوجيه المعلم وائل حمدي: يفضل نطق صوت الحرف بحركاته الثلاث (ـَ ـُ ـِ) ومدوده قبل الانتقال إلى الأسئلة.</span>
+        </div>
+        <span className="text-orange-600 font-black">أبطال الصف الأول 🌟</span>
+      </div>
     </div>
   );
 };

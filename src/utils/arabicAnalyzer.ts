@@ -129,8 +129,9 @@ export function analyzeArabicWord(wordWithTashkeel: string, targetLetterChar: st
   }
 
   // Detect Madd (Long sound)
-  // Madd occurs when the letter is followed by ا or و or ي without a vowel on the madd letter,
+  // Madd occurs when the letter is followed by ا or و or ي,
   // preceded by the corresponding vowel: Fatha -> Alif, Damma -> Waw, Kasra -> Yaa.
+  // If preceded by fatha before waw or yaa, it is Harf Leen (حرف لين), not Madd!
   let maddType: MaddType = 'none';
 
   if (targetIndex < cleanWord.length - 1) {
@@ -140,14 +141,23 @@ export function analyzeArabicWord(wordWithTashkeel: string, targetLetterChar: st
       shortVowel = 'fatha';
       vowelTashkeel = 'َ';
     } else if (nextChar === 'و') {
-      // If vowel before was damma or no vowel specified
-      maddType = 'waw';
-      shortVowel = 'damma';
-      vowelTashkeel = 'ُ';
+      // Only Madd bil-Waw if preceded by Damma
+      if (shortVowel === 'damma' || /[\u064F\u064C]/.test(diacritics)) {
+        maddType = 'waw';
+        shortVowel = 'damma';
+        vowelTashkeel = 'ُ';
+      } else {
+        maddType = 'none';
+      }
     } else if (nextChar === 'ي' || nextChar === 'ى') {
-      maddType = 'yaa';
-      shortVowel = 'kasra';
-      vowelTashkeel = 'ِ';
+      // Only Madd bil-Yaa if preceded by Kasra
+      if (shortVowel === 'kasra' || /[\u0650\u064D]/.test(diacritics)) {
+        maddType = 'yaa';
+        shortVowel = 'kasra';
+        vowelTashkeel = 'ِ';
+      } else {
+        maddType = 'none';
+      }
     }
   }
 

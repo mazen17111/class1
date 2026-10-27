@@ -115,14 +115,24 @@ export const StudentSelector: React.FC<StudentSelectorProps> = ({
         </div>
 
         {/* User Required Title: أبطال الصف الأول - بقيادة المعلم وائل حمدي */}
-        <h1 className="text-4xl sm:text-5xl md:text-6xl font-black text-slate-900 tracking-tight mb-2">
+        <h1 className="text-4xl sm:text-5xl md:text-6xl font-black text-slate-900 tracking-tight mb-3">
           أبطال الصف الأول 🌟
         </h1>
-        <p className="text-xl sm:text-2xl font-black text-orange-600 mb-4 drop-shadow-xs">
-          بقيادة المعلم وائل حمدي 👨‍🏫
-        </p>
 
-        <p className="text-slate-600 text-base sm:text-lg max-w-xl mx-auto">
+        {/* Large, Prominent & Distinct: بقيادة المعلم وائل حمدي */}
+        <div className="inline-block my-2">
+          <div className="relative px-6 sm:px-10 py-3 sm:py-4 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 rounded-2xl sm:rounded-3xl shadow-xl shadow-orange-500/20 text-white border-2 border-white/80">
+            <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
+              <span className="text-2xl sm:text-3xl">👨‍🏫</span>
+              <span className="text-2xl sm:text-3xl md:text-4xl font-black tracking-wide drop-shadow-xs">
+                بقيادة المعلم وائل حمدي
+              </span>
+              <span className="text-2xl sm:text-3xl">⭐</span>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-slate-600 text-base sm:text-lg max-w-xl mx-auto mt-3">
           أضف أسماء أبطال الصف ثم اضغط على زر <strong>«انطلق 🚀»</strong> لبدء القرعة العشوائية. (الطالب الذي يخرج لا يتكرر حتى نهاية الدور لضمان مشاركة الجميع!)
         </p>
       </div>
@@ -224,8 +234,8 @@ export const StudentSelector: React.FC<StudentSelectorProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-xl font-black text-slate-800">أبطال الصف</h3>
-                <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                <h3 className="text-xl font-black text-slate-800">أبطال فصل المعلم وائل حمدي</h3>
+                <span className="text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 px-2.5 py-0.5 rounded-full">
                   إجمالي ({students.length})
                 </span>
               </div>
