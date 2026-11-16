@@ -86,8 +86,71 @@ export interface QuizConfig {
 }
 
 export type AppStage = 
-  | 'students'     // قائمة الطلاب والقرعة
-  | 'letter_select'// اختيار الحرف
-  | 'quiz_setup'   // إعداد النشاط وعدد الأسئلة
-  | 'quiz_active'  // حل الأسئلة التفاعلية
-  | 'quiz_result'; // النتيجة والاحتفال
+  | 'students'            // قائمة الطلاب والقرعة
+  | 'letter_select'       // اختيار الحرف
+  | 'quiz_setup'          // إعداد النشاط وعدد الأسئلة
+  | 'quiz_active'         // حل الأسئلة التفاعلية
+  | 'quiz_result'         // النتيجة والاحتفال
+  | 'presentation_studio';// استوديو إصدار وتعديل باوربوينت و PDF
+
+export type DeckPatternType = 'waves' | 'geometric' | 'diagonal' | 'arches' | 'ribbons' | 'dots';
+
+export interface DeckTheme {
+  id: string;
+  name: string;
+  primaryHex: string;
+  secondaryHex: string;
+  accentHex: string;
+  bgHex: string;
+  surfaceHex: string;
+  borderHex: string;
+  textHex: string;
+  mutedTextHex: string;
+  patternType: DeckPatternType;
+}
+
+export type SlideLayoutVariant =
+  | 'hero-split'
+  | 'hero-centered'
+  | 'hero-arch'
+  | 'cards-4'
+  | 'cards-3'
+  | 'list-clean'
+  | 'gallery-grid'
+  | 'activity-sheet'
+  | 'custom-photo';
+
+export interface SlideCardItem {
+  id: string;
+  label: string;
+  value: string;
+  subtext?: string;
+  image?: string;
+}
+
+export interface UploadedTeacherImage {
+  id: string;
+  dataUrl: string;
+  caption: string;
+  name: string;
+}
+
+export interface PresentationSlide {
+  id: string;
+  kind: 'cover' | 'forms' | 'short_vowels' | 'long_vowels' | 'vocabulary' | 'uploaded_gallery' | 'activity' | 'closing' | 'custom';
+  layoutVariant: SlideLayoutVariant;
+  title: string;
+  subtitle: string;
+  badgeText?: string;
+  highlightLetter?: string;
+  bodyText?: string;
+  items: SlideCardItem[];
+  uploadedImages?: { id: string; dataUrl: string; caption: string }[];
+  teacherNote: string;
+  // Interactive placement & typography customizations inside the slide
+  textAlign?: 'right' | 'center' | 'left';
+  headerLetterSide?: 'left' | 'right' | 'hidden';
+  columnsOverride?: 1 | 2 | 3 | 4;
+  fontScale?: 'sm' | 'md' | 'lg';
+  swapPositions?: boolean;
+}

@@ -6,6 +6,8 @@ import { ActivitySetup } from './components/ActivitySetup';
 import { QuizEngine } from './components/QuizEngine';
 import { QuizResultModal } from './components/QuizResultModal';
 import { WordManagerModal } from './components/WordManagerModal';
+import { PresentationStudio } from './components/PresentationStudio';
+import { FileText, Presentation, ArrowLeft } from 'lucide-react';
 import { 
   AppStage, ArabicLetter, Question, QuizConfig, Student, WordItem 
 } from './types';
@@ -189,33 +191,78 @@ export default function App() {
         onToggleSound={handleToggleSound}
       />
 
-      {/* Stage Step Indicator Banner */}
-      <div className="bg-amber-50/70 border-b border-amber-100 py-2 px-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-center gap-2 sm:gap-4 text-xs sm:text-sm font-black flex-wrap">
-          <span className={stage === 'students' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
-            1. القرعة والطلاب
-          </span>
-          <span className="text-slate-300">←</span>
-          <span className={stage === 'letter_select' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
-            2. اختيار الحرف
-          </span>
-          <span className="text-slate-300">←</span>
-          <span className={stage === 'quiz_setup' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
-            3. نوع وعدد الأسئلة
-          </span>
-          <span className="text-slate-300">←</span>
-          <span className={stage === 'quiz_active' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
-            4. الأنشطة التفاعلية
-          </span>
-          <span className="text-slate-300">←</span>
-          <span className={stage === 'quiz_result' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
-            5. النتيجة والاحتفال
-          </span>
+      {/* Stage Step Indicator Banner (hidden when inside presentation studio) */}
+      {stage !== 'presentation_studio' && (
+        <div className="bg-amber-50/70 border-b border-amber-100 py-2 px-4">
+          <div className="max-w-4xl mx-auto flex items-center justify-center gap-2 sm:gap-4 text-xs sm:text-sm font-black flex-wrap">
+            <span className={stage === 'students' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
+              1. القرعة والطلاب
+            </span>
+            <span className="text-slate-300">←</span>
+            <span className={stage === 'letter_select' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
+              2. اختيار الحرف
+            </span>
+            <span className="text-slate-300">←</span>
+            <span className={stage === 'quiz_setup' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
+              3. نوع وعدد الأسئلة
+            </span>
+            <span className="text-slate-300">←</span>
+            <span className={stage === 'quiz_active' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
+              4. الأنشطة التفاعلية
+            </span>
+            <span className="text-slate-300">←</span>
+            <span className={stage === 'quiz_result' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
+              5. النتيجة والاحتفال
+            </span>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Prominent Large Rectangular Top Button: إصدار باوربوينت أو PDF */}
+      {stage !== 'presentation_studio' && (
+        <div className="max-w-5xl mx-auto w-full px-4 pt-5">
+          <button
+            id="btn-open-presentation-studio"
+            type="button"
+            onClick={() => {
+              sound.playClick();
+              setStage('presentation_studio');
+            }}
+            className="w-full text-right rounded-2xl bg-slate-900 hover:bg-slate-800 text-white px-6 py-4 sm:px-8 sm:py-5 shadow-md border border-slate-800 transition-all active:scale-[0.995] flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 shadow-sm">
+                <Presentation className="w-7 h-7" />
+              </div>
+              <div>
+                <div className="text-xl sm:text-2xl font-black tracking-tight text-white">
+                  إصدار باوربوينت أو PDF
+                </div>
+                <div className="text-xs sm:text-sm font-medium text-slate-300 mt-0.5">
+                  اختر الحرف وأضف صورك لإصدار عرض PPTX أو ملف PDF متجدد ومرتب وقابل للتعديل · بقيادة المعلم وائل حمدي
+                </div>
+              </div>
+            </div>
+
+            <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 group-hover:bg-amber-400 text-slate-950 font-black text-sm shrink-0 self-end sm:self-center transition-colors whitespace-nowrap">
+              <FileText className="w-4 h-4" />
+              <span>ابدأ الإصدار الآن</span>
+              <ArrowLeft className="w-4 h-4" />
+            </div>
+          </button>
+        </div>
+      )}
 
       {/* Main View Area */}
       <main className="flex-1 pb-16">
+        {/* Presentation & PDF Studio */}
+        {stage === 'presentation_studio' && (
+          <PresentationStudio
+            words={words}
+            onBackToPlatform={handleResetToStudents}
+          />
+        )}
+
         {/* Stage 1: Students and Raffle */}
         {stage === 'students' && (
           <StudentSelector
