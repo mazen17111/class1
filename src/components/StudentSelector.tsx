@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UserPlus, Trash2, Sparkles, Trophy, Users, RefreshCw, ArrowLeft, Dices, RotateCcw, CheckCircle2, Award } from 'lucide-react';
+import { UserPlus, Lock, Trash2, Sparkles, Trophy, Users, RefreshCw, ArrowLeft, Dices, RotateCcw, CheckCircle2, Award, Cloud } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { Student } from '../types';
+import { Student, BrandSettings } from '../types';
 import { sound } from '../utils/audio';
 
 interface StudentSelectorProps {
@@ -12,6 +12,8 @@ interface StudentSelectorProps {
   onSelectStudent: (student: Student) => void;
   selectedStudentIds: string[];
   onResetRaffleCycle: () => void;
+  isFirebaseSynced?: boolean;
+  brandSettings?: BrandSettings;
 }
 
 const AVATAR_COLORS = [
@@ -28,8 +30,13 @@ export const StudentSelector: React.FC<StudentSelectorProps> = ({
   onSelectStudent,
   selectedStudentIds,
   onResetRaffleCycle,
+  isFirebaseSynced = false,
+  brandSettings,
 }) => {
+  const circleColor = brandSettings?.badgeColor || '#F97316';
+  const circleLogo = brandSettings?.logoUrl || '';
   const [newStudentName, setNewStudentName] = useState('');
+  const [duplicateNotice, setDuplicateNotice] = useState('');
   const [isSpinning, setIsSpinning] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
   const [chosenStudent, setChosenStudent] = useState<Student | null>(null);
@@ -42,8 +49,14 @@ export const StudentSelector: React.FC<StudentSelectorProps> = ({
 
   const handleAdd = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const trimmed = newStudentName.trim();
+    const trimmed = newStudentName.trim().slice(0, 100);
     if (!trimmed) return;
+    if (students.some(s => s.name.trim() === trimmed)) {
+      setDuplicateNotice(`الطالب "${trimmed}" موجود بالفعل في القائمة الدائمة.`);
+      setTimeout(() => setDuplicateNotice(''), 3000);
+      return;
+    }
+    setDuplicateNotice('');
     sound.playClick();
     onAddStudent(trimmed);
     setNewStudentName('');
@@ -114,21 +127,71 @@ export const StudentSelector: React.FC<StudentSelectorProps> = ({
           <span>المنصة التعليمية التفاعلية • اللغة العربية</span>
         </div>
 
-        {/* User Required Title: أبطال الصف الأول - بقيادة المعلم وائل حمدي */}
-        <h1 className="text-4xl sm:text-5xl md:text-6xl font-black text-slate-900 tracking-tight mb-3">
-          أبطال الصف الأول 🌟
-        </h1>
+        {/* Title Stack (أبطال الصف الأول + بقيادة المعلم وائل حمدي underneath) + Giant Water-Wave Circle on the Left */}
+        <div className="flex flex-col md:flex-row items-center justify-center gap-6 sm:gap-10 pt-10 sm:pt-12 mb-5">
+          {/* Right Side (RTL): Title + Teacher Banner stacked vertically */}
+          <div className="flex flex-col items-center gap-3 sm:gap-4">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-black text-slate-900 tracking-tight">
+              أبطال الصف الأول 🌟
+            </h1>
 
-        {/* Large, Prominent & Distinct: بقيادة المعلم وائل حمدي */}
-        <div className="inline-block my-2">
-          <div className="relative px-6 sm:px-10 py-3 sm:py-4 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 rounded-2xl sm:rounded-3xl shadow-xl shadow-orange-500/20 text-white border-2 border-white/80">
-            <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
-              <span className="text-2xl sm:text-3xl">👨‍🏫</span>
-              <span className="text-2xl sm:text-3xl md:text-4xl font-black tracking-wide drop-shadow-xs">
-                بقيادة المعلم وائل حمدي
-              </span>
-              <span className="text-2xl sm:text-3xl">⭐</span>
+            {/* Prominent & Distinct: بقيادة المعلم وائل حمدي directly under أبطال الصف الأول */}
+            <div className="inline-block">
+              <div className="relative px-6 sm:px-8 py-3 sm:py-3.5 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 rounded-2xl sm:rounded-3xl shadow-xl shadow-orange-500/20 text-white border-2 border-white/80">
+                <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
+                  <span className="text-2xl sm:text-3xl">👨‍🏫</span>
+                  <span className="text-xl sm:text-2xl md:text-3xl font-black tracking-wide drop-shadow-xs">
+                    بقيادة المعلم وائل حمدي
+                  </span>
+                  <span className="text-2xl sm:text-3xl">⭐</span>
+                </div>
+              </div>
             </div>
+          </div>
+
+          {/* Left Side (RTL): Giant completely colored circle moving gently like water waves */}
+          <div
+            className="relative w-52 h-52 sm:w-60 sm:h-60 md:w-64 md:h-64 flex items-center justify-center shrink-0"
+            title="أبطال الصف الأول"
+          >
+            {/* Gentle water ripples expanding outward */}
+            <span
+              className="absolute inset-0 rounded-full animate-water-ripple pointer-events-none"
+              style={{ backgroundColor: circleColor }}
+            />
+            <span
+              className="absolute inset-0 rounded-full animate-water-ripple-delayed pointer-events-none"
+              style={{ backgroundColor: circleColor }}
+            />
+
+            {/* Main completely colored circle with gentle water-wave motion */}
+            <div
+              className="relative z-10 w-52 h-52 sm:w-60 sm:h-60 md:w-64 md:h-64 animate-water-wave overflow-hidden shadow-2xl"
+              style={{
+                backgroundColor: circleColor,
+                boxShadow: `0 18px 42px -8px ${circleColor}99, inset 0 -12px 26px rgba(0,0,0,0.16), inset 0 8px 18px rgba(255,255,255,0.28)`,
+              }}
+            >
+              {/* Soft internal water-wave shimmer */}
+              <span
+                className="pointer-events-none absolute left-1/2 top-[58%] w-[160%] h-[160%] rounded-[42%] bg-white/18 animate-water-slosh"
+              />
+              <span
+                className="pointer-events-none absolute left-1/2 top-[66%] w-[150%] h-[150%] rounded-[44%] bg-white/12 animate-water-slosh"
+                style={{ animationDuration: '9.5s', animationDirection: 'reverse' }}
+              />
+            </div>
+
+            {/* Uploaded image fills the full circle size & protrudes slightly from the TOP */}
+            {circleLogo && (
+              <div className="pointer-events-none absolute -top-5 sm:-top-6 md:-top-7 bottom-0 inset-x-0 z-20 rounded-t-[2.75rem] rounded-b-full overflow-hidden flex items-end justify-center">
+                <img
+                  src={circleLogo}
+                  alt="شعار أبطال الصف الأول"
+                  className="w-full h-full object-cover object-top drop-shadow-[0_12px_18px_rgba(0,0,0,0.25)]"
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -144,9 +207,13 @@ export const StudentSelector: React.FC<StudentSelectorProps> = ({
             <input
               id="input-student-name"
               type="text"
+              maxLength={100}
               value={newStudentName}
-              onChange={(e) => setNewStudentName(e.target.value)}
-              placeholder="اكتب اسم بطل الصف هنا... (مثال: زياد، ليلى، فهد)"
+              onChange={(e) => {
+                setNewStudentName(e.target.value);
+                if (duplicateNotice) setDuplicateNotice('');
+              }}
+              placeholder="اكتب اسم بطل الصف هنا... (يُحفظ بشكل دائم ولا يُحذف)"
               className="w-full text-lg font-bold px-5 py-3.5 rounded-2xl bg-slate-50 border-2 border-slate-200 focus:border-amber-500 focus:bg-white focus:outline-hidden transition-all text-slate-800 placeholder:text-slate-400"
             />
           </div>
@@ -160,6 +227,9 @@ export const StudentSelector: React.FC<StudentSelectorProps> = ({
             <span>إضافة (+)</span>
           </button>
         </form>
+        {duplicateNotice && (
+          <p className="text-xs font-bold text-amber-700 mt-2 px-2">{duplicateNotice}</p>
+        )}
       </div>
 
       {/* Cycle Completed Announcement Banner */}
@@ -233,10 +303,14 @@ export const StudentSelector: React.FC<StudentSelectorProps> = ({
               <Users className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-xl font-black text-slate-800">أبطال فصل المعلم وائل حمدي</h3>
                 <span className="text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 px-2.5 py-0.5 rounded-full">
                   إجمالي ({students.length})
+                </span>
+                <span className="inline-flex items-center gap-1 text-[11px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                  {isFirebaseSynced ? <Cloud className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                  <span>{isFirebaseSynced ? 'محفوظ سحابياً (الحذف يدوي فقط)' : 'محفوظ بشكل دائم (الحذف يدوي فقط)'}</span>
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
@@ -277,7 +351,7 @@ export const StudentSelector: React.FC<StudentSelectorProps> = ({
                       setShowClearConfirm(true);
                     }}
                     className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 text-xs sm:text-sm font-black transition-all active:scale-95 border border-red-200/60"
-                    title="حذف جميع أسماء الطلاب المضافة"
+                    title="حذف جميع أسماء الطلاب يدوياً"
                   >
                     <Trash2 className="w-4 h-4 text-red-600" />
                     <span>حذف الكل 🗑️</span>
@@ -402,8 +476,8 @@ export const StudentSelector: React.FC<StudentSelectorProps> = ({
                         setChosenStudent(null);
                       }
                     }}
-                    title="حذف الطالب من القائمة"
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 active:scale-90 transition-all opacity-70 group-hover:opacity-100"
+                    title="حذف الطالب يدوياً من القائمة"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 active:scale-90 transition-all opacity-75 group-hover:opacity-100"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

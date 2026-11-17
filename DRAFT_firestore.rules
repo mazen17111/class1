@@ -1,0 +1,168 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net (Default Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Global Helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 3. Entity Validation Blueprints
+    function isValidStudent(data, studentId) {
+      return data.keys().hasAll(['id', 'name', 'avatarColor', 'createdAt'])
+        && data.keys().hasOnly(['id', 'name', 'avatarColor', 'createdAt'])
+        && data.id is string && isValidId(data.id) && data.id == studentId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 100
+        && data.avatarColor is string && data.avatarColor.size() >= 4 && data.avatarColor.size() <= 20
+        && data.createdAt is timestamp;
+    }
+
+    function isValidCertificate(data, certId) {
+      return data.keys().hasAll([
+          'id', 'studentId', 'studentName', 'studentAvatarColor',
+          'letterId', 'letterChar', 'letterName', 'score', 'total',
+          'percentage', 'themeId', 'issuedDateLabel', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'studentId', 'studentName', 'studentAvatarColor',
+          'letterId', 'letterChar', 'letterName', 'score', 'total',
+          'percentage', 'themeId', 'issuedDateLabel', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string && isValidId(data.id) && data.id == certId
+        && data.studentId is string && data.studentId.size() >= 1 && data.studentId.size() <= 128
+        && data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 100
+        && data.studentAvatarColor is string && data.studentAvatarColor.size() >= 4 && data.studentAvatarColor.size() <= 20
+        && data.letterId is string && data.letterId.size() >= 1 && data.letterId.size() <= 40
+        && data.letterChar is string && data.letterChar.size() >= 1 && data.letterChar.size() <= 10
+        && data.letterName is string && data.letterName.size() >= 1 && data.letterName.size() <= 40
+        && data.score is number && data.score >= 0 && data.score <= 100
+        && data.total is number && data.total >= 1 && data.total <= 100
+        && data.percentage is number && data.percentage >= 0 && data.percentage <= 100
+        && data.themeId is string && data.themeId.size() >= 1 && data.themeId.size() <= 40
+        && data.issuedDateLabel is string && data.issuedDateLabel.size() >= 1 && data.issuedDateLabel.size() <= 80
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCustomWord(data, wordId) {
+      return data.keys().hasAll([
+          'id', 'word', 'cleanWord', 'targetLetter',
+          'position', 'maddType', 'image', 'isCustom', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'word', 'cleanWord', 'targetLetter',
+          'position', 'maddType', 'shortVowel', 'image', 'meaning', 'isCustom', 'createdAt'
+        ])
+        && data.id is string && isValidId(data.id) && data.id == wordId
+        && data.word is string && data.word.size() >= 1 && data.word.size() <= 80
+        && data.cleanWord is string && data.cleanWord.size() >= 1 && data.cleanWord.size() <= 80
+        && data.targetLetter is string && data.targetLetter.size() >= 1 && data.targetLetter.size() <= 10
+        && data.position is string && data.position in ['beginning', 'middle', 'end', 'isolated']
+        && data.maddType is string && data.maddType in ['none', 'alif', 'waw', 'yaa']
+        && (!('shortVowel' in data) || (data.shortVowel is string && data.shortVowel in ['fatha', 'damma', 'kasra', 'sukoon']))
+        && data.image is string && data.image.size() <= 500000
+        && (!('meaning' in data) || (data.meaning is string && data.meaning.size() <= 120))
+        && data.isCustom is bool && data.isCustom == true
+        && data.createdAt is timestamp;
+    }
+
+    // 4. Direct Classroom Collections (No Login Required; Zero PII)
+
+    // Permanent Students (Deletions strictly forbidden)
+    match /students/{studentId} {
+      allow get: if isValidId(studentId);
+      allow list: if true;
+
+      allow create: if isValidId(studentId)
+        && isValidStudent(incoming(), studentId)
+        && incoming().createdAt == request.time;
+
+      allow update: if isValidId(studentId)
+        && isValidStudent(incoming(), studentId)
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatarColor']);
+
+      allow delete: if isValidId(studentId);
+    }
+
+    // Permanent Issued Certificates Archive
+    match /certificates/{certId} {
+      allow get: if isValidId(certId);
+      allow list: if true;
+
+      allow create: if isValidId(certId)
+        && isValidCertificate(incoming(), certId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(certId)
+        && isValidCertificate(incoming(), certId)
+        && incoming().id == existing().id
+        && incoming().studentId == existing().studentId
+        && incoming().score == existing().score
+        && incoming().total == existing().total
+        && incoming().percentage == existing().percentage
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['themeId', 'updatedAt']);
+
+      allow delete: if false;
+    }
+
+    // Teacher Custom Words & Compressed Images
+    match /customWords/{wordId} {
+      allow get: if isValidId(wordId);
+      allow list: if true;
+
+      allow create: if isValidId(wordId)
+        && isValidCustomWord(incoming(), wordId)
+        && incoming().createdAt == request.time;
+
+      allow update: if false;
+
+      allow delete: if isValidId(wordId);
+    }
+
+    function isValidBranding(data) {
+      return data.keys().hasAll(['id', 'logoUrl', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'logoUrl', 'badgeChar', 'badgeColor', 'updatedAt'])
+        && data.id is string && data.id == 'branding'
+        && data.logoUrl is string && data.logoUrl.size() <= 500000
+        && (!('badgeChar' in data) || (data.badgeChar is string && data.badgeChar.size() >= 1 && data.badgeChar.size() <= 10))
+        && (!('badgeColor' in data) || (data.badgeColor is string && data.badgeColor.size() >= 4 && data.badgeColor.size() <= 20))
+        && data.updatedAt is timestamp;
+    }
+
+    // Platform Branding Settings (Logo, Letter, Color)
+    match /settings/{settingId} {
+      allow get: if settingId == 'branding';
+      allow list: if false;
+
+      allow create: if settingId == 'branding'
+        && isValidBranding(incoming())
+        && incoming().updatedAt == request.time;
+
+      allow update: if settingId == 'branding'
+        && isValidBranding(incoming())
+        && incoming().id == existing().id
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['logoUrl', 'badgeChar', 'badgeColor', 'updatedAt']);
+
+      allow delete: if false;
+    }
+  }
+}

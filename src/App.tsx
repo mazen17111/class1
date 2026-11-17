@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { StudentSelector } from './components/StudentSelector';
 import { LetterPicker } from './components/LetterPicker';
@@ -7,21 +7,74 @@ import { QuizEngine } from './components/QuizEngine';
 import { QuizResultModal } from './components/QuizResultModal';
 import { WordManagerModal } from './components/WordManagerModal';
 import { PresentationStudio } from './components/PresentationStudio';
-import { FileText, Presentation, ArrowLeft } from 'lucide-react';
-import { 
-  AppStage, ArabicLetter, Question, QuizConfig, Student, WordItem 
+import { SmartWhiteboard } from './components/SmartWhiteboard';
+import { IssuedCertificatesView } from './components/IssuedCertificatesView';
+import { AdminControlModal } from './components/AdminControlModal';
+import { CERTIFICATE_THEMES } from './components/ChildCertificate';
+import { FileText, Presentation, ArrowLeft, Monitor, Award, Sparkles } from 'lucide-react';
+import {
+  AppStage,
+  ArabicLetter,
+  BrandSettings,
+  IssuedCertificate,
+  Question,
+  QuizConfig,
+  Student,
+  WordItem,
 } from './types';
-import { 
-  loadStudents, saveStudents, loadWords, saveCustomWord, deleteCustomWord 
+import {
+  loadStudents,
+  saveStudents,
+  hasSavedStudentsLocally,
+  loadWords,
+  saveCustomWord,
+  saveAllCustomWords,
+  deleteCustomWord,
+  loadCertificates,
+  saveCertificatesLocal,
+  upsertCertificateLocal,
+  loadBrandSettings,
+  saveBrandSettingsLocal,
 } from './utils/storage';
 import { generateQuizQuestions } from './utils/questionGenerator';
 import { sound } from './utils/audio';
+import {
+  syncLocalDataToFirestore,
+  subscribeStudents,
+  subscribeCertificates,
+  subscribeCustomWords,
+  saveStudentToFirestore,
+  deleteStudentFromFirestore,
+  deleteStudentsBatchFromFirestore,
+  saveCertificateToFirestore,
+  updateCertificateThemeInFirestore,
+  saveCustomWordToFirestore,
+  deleteCustomWordFromFirestore,
+  subscribeBrandSettings,
+  saveBrandSettingsToFirestore,
+} from './firebase';
+
+let lastAutoCertThemeIdx = -1;
 
 export default function App() {
   const [stage, setStage] = useState<AppStage>('students');
-  const [students, setStudents] = useState<Student[]>([]);
-  const [words, setWords] = useState<WordItem[]>([]);
-  
+  const [students, setStudents] = useState<Student[]>(() => loadStudents());
+  const [words, setWords] = useState<WordItem[]>(() => loadWords());
+  const [issuedCertificates, setIssuedCertificates] = useState<IssuedCertificate[]>(() =>
+    loadCertificates()
+  );
+
+  // Direct Firebase Firestore connection status (no login required)
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
+
+  // Keep refs of initial local data for initial sync
+  const studentsRef = useRef(students);
+  const wordsRef = useRef(words);
+  const certsRef = useRef(issuedCertificates);
+  studentsRef.current = students;
+  wordsRef.current = words;
+  certsRef.current = issuedCertificates;
+
   // Track students who have already been selected in this raffle round
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
@@ -30,23 +83,84 @@ export default function App() {
   const [currentLetter, setCurrentLetter] = useState<ArabicLetter | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [quizScore, setQuizScore] = useState<{ score: number; total: number } | null>(null);
+  const [activeCertificateId, setActiveCertificateId] = useState<string | null>(null);
+  const [activeCertificateThemeId, setActiveCertificateThemeId] = useState<string>('gold');
   const [usedWordHistory, setUsedWordHistory] = useState<Record<string, string[]>>({});
 
   // Settings & Modals
   const [isWordManagerOpen, setIsWordManagerOpen] = useState(false);
+  const [isAdminControlOpen, setIsAdminControlOpen] = useState(false);
+  const [brandSettings, setBrandSettings] = useState<BrandSettings>(() => loadBrandSettings());
   const [soundEnabled, setSoundEnabled] = useState(true);
 
-  // Initialize data from storage
+  // Direct Firestore startup sync & real-time subscriptions (no login)
   useEffect(() => {
-    setStudents(loadStudents());
-    setWords(loadWords());
+    let isMounted = true;
+    let unsubStudents: (() => void) | null = null;
+    let unsubCerts: (() => void) | null = null;
+    let unsubWords: (() => void) | null = null;
+    let unsubBrand: (() => void) | null = null;
+
+    const initFirestore = async () => {
+      const ok = await syncLocalDataToFirestore(
+        studentsRef.current,
+        certsRef.current,
+        wordsRef.current.filter((w) => w.isCustom),
+        hasSavedStudentsLocally()
+      );
+      if (!isMounted) return;
+      setIsFirebaseConnected(ok);
+
+      unsubStudents = subscribeStudents((remoteStudents) => {
+        setIsFirebaseConnected(true);
+        setStudents(remoteStudents);
+        saveStudents(remoteStudents);
+      });
+
+      unsubCerts = subscribeCertificates((remoteCerts) => {
+        setIssuedCertificates((prev) => {
+          const byId = new Map<string, IssuedCertificate>();
+          for (const c of prev) byId.set(c.id, c);
+          for (const c of remoteCerts) byId.set(c.id, c);
+          const merged = Array.from(byId.values()).sort(
+            (a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0)
+          );
+          saveCertificatesLocal(merged);
+          return merged;
+        });
+      });
+
+      unsubWords = subscribeCustomWords((remoteCustomWords) => {
+        const updated = saveAllCustomWords(remoteCustomWords);
+        setWords(updated);
+      });
+
+      unsubBrand = subscribeBrandSettings((remoteSettings) => {
+        setBrandSettings(remoteSettings);
+        saveBrandSettingsLocal(remoteSettings);
+      });
+    };
+
+    initFirestore();
+
+    return () => {
+      isMounted = false;
+      if (unsubStudents) unsubStudents();
+      if (unsubCerts) unsubCerts();
+      if (unsubWords) unsubWords();
+      if (unsubBrand) unsubBrand();
+    };
   }, []);
 
-  // Save student updates
+  // Permanent student creation (NEVER deleted)
   const handleAddStudent = (name: string) => {
+    const cleanName = name.trim().slice(0, 100);
+    if (!cleanName) return;
+    if (students.some((s) => s.name.trim() === cleanName)) return;
+
     const newStudent: Student = {
       id: `s-${Date.now()}`,
-      name,
+      name: cleanName,
       avatarColor: ['#3B82F6', '#EC4899', '#10B981', '#8B5CF6', '#F59E0B', '#06B6D4', '#EF4444'][
         Math.floor(Math.random() * 7)
       ],
@@ -54,31 +168,70 @@ export default function App() {
     const updated = [newStudent, ...students];
     setStudents(updated);
     saveStudents(updated);
+
+    saveStudentToFirestore(newStudent).catch((e) =>
+      console.error('Failed to save student to Firebase:', e)
+    );
   };
 
   const handleRemoveStudent = (id: string) => {
-    const updated = students.filter(s => s.id !== id);
+    const updated = students.filter((s) => s.id !== id);
     setStudents(updated);
     saveStudents(updated);
-    setSelectedStudentIds(prev => prev.filter(sid => sid !== id));
+    setSelectedStudentIds((prev) => prev.filter((sid) => sid !== id));
+    if (currentStudent?.id === id) {
+      setCurrentStudent(null);
+    }
+
+    deleteStudentFromFirestore(id).catch((e) =>
+      console.error('Failed to delete student from Firebase:', e)
+    );
   };
 
   const handleClearAllStudents = () => {
+    const idsToDelete = students.map((s) => s.id);
     setStudents([]);
     saveStudents([]);
     setSelectedStudentIds([]);
     setCurrentStudent(null);
+
+    deleteStudentsBatchFromFirestore(idsToDelete).catch((e) =>
+      console.error('Failed to delete all students from Firebase:', e)
+    );
   };
 
   // Word manager updates
   const handleAddWord = (newWord: WordItem) => {
     const updated = saveCustomWord(newWord);
     setWords(updated);
+
+    saveCustomWordToFirestore(newWord).catch((e) =>
+      console.error('Failed to save word to Firebase:', e)
+    );
   };
 
   const handleDeleteWord = (id: string) => {
     const updated = deleteCustomWord(id);
     setWords(updated);
+
+    deleteCustomWordFromFirestore(id).catch((e) =>
+      console.error('Failed to delete word from Firebase:', e)
+    );
+  };
+
+  // Certificate theme updates
+  const handleUpdateCertificateTheme = (certId: string, themeId: string) => {
+    setIssuedCertificates((prev) => {
+      const updated = prev.map((c) => (c.id === certId ? { ...c, themeId } : c));
+      saveCertificatesLocal(updated);
+      return updated;
+    });
+    if (certId === activeCertificateId) {
+      setActiveCertificateThemeId(themeId);
+    }
+    updateCertificateThemeInFirestore(certId, themeId).catch((e) =>
+      console.error('Failed to update certificate theme in Firebase:', e)
+    );
   };
 
   // Sound toggle
@@ -91,8 +244,7 @@ export default function App() {
   // Flow handlers
   const handleSelectStudent = (student: Student) => {
     setCurrentStudent(student);
-    // Mark student as selected for the current cycle so they do not repeat
-    setSelectedStudentIds(prev => {
+    setSelectedStudentIds((prev) => {
       if (prev.includes(student.id)) return prev;
       return [...prev, student.id];
     });
@@ -110,7 +262,6 @@ export default function App() {
   };
 
   const handleStartQuiz = (config: QuizConfig) => {
-    // Generate questions avoiding recently used words and prioritizing custom words/images
     const letterKey = config.letter.char;
     const historyForLetter = usedWordHistory[letterKey] || [];
 
@@ -122,11 +273,10 @@ export default function App() {
       historyForLetter
     );
 
-    // Track used words for this letter to prevent repetition for subsequent students
-    const newWordIds = generated.map(q => q.targetWord.id);
-    setUsedWordHistory(prev => ({
+    const newWordIds = generated.map((q) => q.targetWord.id);
+    setUsedWordHistory((prev) => ({
       ...prev,
-      [letterKey]: [...(prev[letterKey] || []), ...newWordIds]
+      [letterKey]: [...(prev[letterKey] || []), ...newWordIds],
     }));
 
     setQuestions(generated);
@@ -135,6 +285,48 @@ export default function App() {
 
   const handleQuizComplete = (score: number, total: number) => {
     setQuizScore({ score, total });
+
+    // Automatically issue and archive certificate
+    if (currentStudent && currentLetter) {
+      const nextIdx =
+        lastAutoCertThemeIdx === -1
+          ? Math.floor(Math.random() * CERTIFICATE_THEMES.length)
+          : (lastAutoCertThemeIdx + 1) % CERTIFICATE_THEMES.length;
+      lastAutoCertThemeIdx = nextIdx;
+      const chosenThemeId = CERTIFICATE_THEMES[nextIdx].id;
+      const certId = `cert_${Date.now()}`;
+      const percentage = Math.round((score / Math.max(1, total)) * 100);
+      const issuedDateLabel = new Intl.DateTimeFormat('ar-EG', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      }).format(new Date());
+
+      const newCert: IssuedCertificate = {
+        id: certId,
+        studentId: currentStudent.id,
+        studentName: currentStudent.name,
+        studentAvatarColor: currentStudent.avatarColor,
+        letterId: currentLetter.id,
+        letterChar: currentLetter.char,
+        letterName: currentLetter.name,
+        score,
+        total,
+        percentage,
+        themeId: chosenThemeId,
+        issuedDateLabel,
+        createdAtMs: Date.now(),
+      };
+
+      setActiveCertificateId(certId);
+      setActiveCertificateThemeId(chosenThemeId);
+      setIssuedCertificates(upsertCertificateLocal(newCert));
+
+      saveCertificateToFirestore(newCert).catch((e) =>
+        console.error('Failed to archive certificate in Firebase:', e)
+      );
+    }
+
     setStage('quiz_result');
   };
 
@@ -144,6 +336,7 @@ export default function App() {
     setCurrentLetter(null);
     setQuestions([]);
     setQuizScore(null);
+    setActiveCertificateId(null);
     setStage('students');
   };
 
@@ -154,7 +347,6 @@ export default function App() {
 
   const handleRetrySameQuiz = () => {
     if (currentLetter && currentStudent) {
-      // Regenerate fresh, non-repeating questions
       const letterKey = currentLetter.char;
       const historyForLetter = usedWordHistory[letterKey] || [];
 
@@ -166,10 +358,10 @@ export default function App() {
         historyForLetter
       );
 
-      const newWordIds = generated.map(q => q.targetWord.id);
-      setUsedWordHistory(prev => ({
+      const newWordIds = generated.map((q) => q.targetWord.id);
+      setUsedWordHistory((prev) => ({
         ...prev,
-        [letterKey]: [...(prev[letterKey] || []), ...newWordIds]
+        [letterKey]: [...(prev[letterKey] || []), ...newWordIds],
       }));
 
       setQuestions(generated);
@@ -177,10 +369,14 @@ export default function App() {
     }
   };
 
+  const isToolFullscreenStage =
+    stage === 'presentation_studio' ||
+    stage === 'whiteboard' ||
+    stage === 'issued_certificates';
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-amber-200">
-      
-      {/* Top Navigation */}
+      {/* Top Navigation (No login UI) */}
       <Navbar
         stage={stage}
         currentStudent={currentStudent}
@@ -189,38 +385,136 @@ export default function App() {
         onResetToStudents={handleResetToStudents}
         soundEnabled={soundEnabled}
         onToggleSound={handleToggleSound}
+        isFirebaseConnected={isFirebaseConnected}
+        brandSettings={brandSettings}
+        isAdminControlOpen={isAdminControlOpen}
+        onOpenAdminControl={() => setIsAdminControlOpen(true)}
       />
 
-      {/* Stage Step Indicator Banner (hidden when inside presentation studio) */}
-      {stage !== 'presentation_studio' && (
+      {/* Stage Step Indicator Banner */}
+      {!isToolFullscreenStage && (
         <div className="bg-amber-50/70 border-b border-amber-100 py-2 px-4">
           <div className="max-w-4xl mx-auto flex items-center justify-center gap-2 sm:gap-4 text-xs sm:text-sm font-black flex-wrap">
-            <span className={stage === 'students' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
+            <span
+              className={
+                stage === 'students'
+                  ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full'
+                  : 'text-slate-400'
+              }
+            >
               1. القرعة والطلاب
             </span>
             <span className="text-slate-300">←</span>
-            <span className={stage === 'letter_select' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
+            <span
+              className={
+                stage === 'letter_select'
+                  ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full'
+                  : 'text-slate-400'
+              }
+            >
               2. اختيار الحرف
             </span>
             <span className="text-slate-300">←</span>
-            <span className={stage === 'quiz_setup' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
+            <span
+              className={
+                stage === 'quiz_setup'
+                  ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full'
+                  : 'text-slate-400'
+              }
+            >
               3. نوع وعدد الأسئلة
             </span>
             <span className="text-slate-300">←</span>
-            <span className={stage === 'quiz_active' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
+            <span
+              className={
+                stage === 'quiz_active'
+                  ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full'
+                  : 'text-slate-400'
+              }
+            >
               4. الأنشطة التفاعلية
             </span>
             <span className="text-slate-300">←</span>
-            <span className={stage === 'quiz_result' ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full' : 'text-slate-400'}>
+            <span
+              className={
+                stage === 'quiz_result'
+                  ? 'text-orange-600 bg-orange-100 px-3 py-1 rounded-full'
+                  : 'text-slate-400'
+              }
+            >
               5. النتيجة والاحتفال
             </span>
           </div>
         </div>
       )}
 
-      {/* Prominent Large Rectangular Top Button: إصدار باوربوينت أو PDF */}
-      {stage !== 'presentation_studio' && (
-        <div className="max-w-5xl mx-auto w-full px-4 pt-5">
+      {/* TOP TEACHER COMMAND TOOLS BAR: السبورة الذكية + الشهادات الصادرة + إصدار باوربوينت أو PDF */}
+      {!isToolFullscreenStage && (
+        <div className="max-w-6xl mx-auto w-full px-4 pt-5 space-y-3">
+          {/* Two New Prominent Top Teacher Tools: السبورة الذكية & الشهادات الصادرة */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Smart Whiteboard Button */}
+            <button
+              id="btn-open-smart-whiteboard"
+              type="button"
+              onClick={() => {
+                sound.playClick();
+                setStage('whiteboard');
+              }}
+              className="w-full text-right rounded-2xl bg-gradient-to-l from-indigo-700 via-blue-700 to-slate-900 hover:brightness-110 text-white px-5 py-4 shadow-md border border-indigo-500/40 transition-all active:scale-[0.99] flex items-center justify-between gap-3 group"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-white/15 backdrop-blur-xs text-amber-300 flex items-center justify-center shrink-0 border border-white/20">
+                  <Monitor className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
+                    <span>السبورة الذكية</span>
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                  </div>
+                  <div className="text-xs font-medium text-blue-100 mt-0.5">
+                    3 أقلام بألوان قابلة للتغيير · مظلل · مؤشر ليزر · مساحة وأحجام متنوعة
+                  </div>
+                </div>
+              </div>
+              <span className="px-3.5 py-2 rounded-xl bg-white text-slate-900 font-black text-xs shrink-0 group-hover:bg-amber-300 transition-colors">
+                فتح السبورة
+              </span>
+            </button>
+
+            {/* Issued Certificates Button */}
+            <button
+              id="btn-open-issued-certificates"
+              type="button"
+              onClick={() => {
+                sound.playClick();
+                setStage('issued_certificates');
+              }}
+              className="w-full text-right rounded-2xl bg-gradient-to-l from-emerald-600 via-teal-600 to-emerald-800 hover:brightness-110 text-white px-5 py-4 shadow-md border border-emerald-400/40 transition-all active:scale-[0.99] flex items-center justify-between gap-3 group"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-white/15 backdrop-blur-xs text-yellow-200 flex items-center justify-center shrink-0 border border-white/20">
+                  <Award className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
+                    <span>الشهادات الصادرة</span>
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-xs font-black">
+                      {issuedCertificates.length}
+                    </span>
+                  </div>
+                  <div className="text-xs font-medium text-emerald-100 mt-0.5">
+                    أرشيف جميع الشهادات التي أصدرها المعلم وائل حمدي مع التحميل والطباعة
+                  </div>
+                </div>
+              </div>
+              <span className="px-3.5 py-2 rounded-xl bg-white text-emerald-900 font-black text-xs shrink-0 group-hover:bg-amber-300 group-hover:text-slate-950 transition-colors">
+                عرض السجل
+              </span>
+            </button>
+          </div>
+
+          {/* Prominent Large Rectangular Button: إصدار باوربوينت أو PDF */}
           <button
             id="btn-open-presentation-studio"
             type="button"
@@ -255,6 +549,20 @@ export default function App() {
 
       {/* Main View Area */}
       <main className="flex-1 pb-16">
+        {/* Smart Whiteboard Studio */}
+        {stage === 'whiteboard' && (
+          <SmartWhiteboard onBack={handleResetToStudents} />
+        )}
+
+        {/* Issued Certificates Archive */}
+        {stage === 'issued_certificates' && (
+          <IssuedCertificatesView
+            certificates={issuedCertificates}
+            onUpdateCertificateTheme={handleUpdateCertificateTheme}
+            onBack={handleResetToStudents}
+          />
+        )}
+
         {/* Presentation & PDF Studio */}
         {stage === 'presentation_studio' && (
           <PresentationStudio
@@ -273,6 +581,8 @@ export default function App() {
             onSelectStudent={handleSelectStudent}
             selectedStudentIds={selectedStudentIds}
             onResetRaffleCycle={handleResetRaffleCycle}
+            isFirebaseSynced={isFirebaseConnected}
+            brandSettings={brandSettings}
           />
         )}
 
@@ -314,6 +624,12 @@ export default function App() {
             letter={currentLetter}
             score={quizScore.score}
             total={quizScore.total}
+            initialThemeId={activeCertificateThemeId}
+            onThemeChange={(newThemeId) => {
+              if (activeCertificateId) {
+                handleUpdateCertificateTheme(activeCertificateId, newThemeId);
+              }
+            }}
             onNewStudent={handleResetToStudents}
             onRetry={handleRetrySameQuiz}
             onChangeLetter={handleBackToLetters}
@@ -328,6 +644,18 @@ export default function App() {
         words={words}
         onAddWord={handleAddWord}
         onDeleteWord={handleDeleteWord}
+      />
+
+      {/* Secret Teacher Control Panel (Opened by clicking Firebase badge 10 times; closed only via X) */}
+      <AdminControlModal
+        isOpen={isAdminControlOpen}
+        onClose={() => setIsAdminControlOpen(false)}
+        currentSettings={brandSettings}
+        onSaveSettings={async (newSettings) => {
+          setBrandSettings(newSettings);
+          saveBrandSettingsLocal(newSettings);
+          await saveBrandSettingsToFirestore(newSettings);
+        }}
       />
 
       {/* Footer */}

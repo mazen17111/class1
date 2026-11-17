@@ -1,0 +1,267 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "Permanent classroom student record that cannot be deleted",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique student identifier"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Student full or first name"
+        },
+        "avatarColor": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 20,
+          "description": "Hex color for student avatar"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        }
+      },
+      "required": ["id", "name", "avatarColor", "createdAt"]
+    },
+    "IssuedCertificate": {
+      "title": "IssuedCertificate",
+      "description": "Issued student excellence certificate metadata",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique certificate identifier"
+        },
+        "studentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Associated student ID"
+        },
+        "studentName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Name of the student on the certificate"
+        },
+        "studentAvatarColor": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 20,
+          "description": "Student avatar hex color"
+        },
+        "letterId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Arabic letter identifier"
+        },
+        "letterChar": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10,
+          "description": "Arabic letter character"
+        },
+        "letterName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Arabic letter name"
+        },
+        "score": {
+          "type": "number",
+          "description": "Number of correct answers"
+        },
+        "total": {
+          "type": "number",
+          "description": "Total number of questions"
+        },
+        "percentage": {
+          "type": "number",
+          "description": "Mastery percentage (0-100)"
+        },
+        "themeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Certificate color theme ID"
+        },
+        "issuedDateLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Formatted Arabic date label"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "id",
+        "studentId",
+        "studentName",
+        "studentAvatarColor",
+        "letterId",
+        "letterChar",
+        "letterName",
+        "score",
+        "total",
+        "percentage",
+        "themeId",
+        "issuedDateLabel",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CustomWord": {
+      "title": "CustomWord",
+      "description": "Teacher-added custom vocabulary word and compressed image",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique word identifier"
+        },
+        "word": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Vocalized Arabic word"
+        },
+        "cleanWord": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Unvocalized Arabic word"
+        },
+        "targetLetter": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10,
+          "description": "Target Arabic letter"
+        },
+        "position": {
+          "type": "string",
+          "enum": ["beginning", "middle", "end", "isolated"],
+          "description": "Position of target letter"
+        },
+        "maddType": {
+          "type": "string",
+          "enum": ["none", "alif", "waw", "yaa"],
+          "description": "Long vowel madd type"
+        },
+        "shortVowel": {
+          "type": "string",
+          "enum": ["fatha", "damma", "kasra", "sukoon"],
+          "description": "Short vowel diacritic"
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 500000,
+          "description": "Compressed JPEG data URL or image URL"
+        },
+        "meaning": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Optional word meaning"
+        },
+        "isCustom": {
+          "type": "boolean",
+          "description": "Always true for teacher-created words"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        }
+      },
+      "required": [
+        "id",
+        "word",
+        "cleanWord",
+        "targetLetter",
+        "position",
+        "maddType",
+        "image",
+        "isCustom",
+        "createdAt"
+      ]
+    },
+    "BrandingSettings": {
+      "title": "BrandingSettings",
+      "description": "Platform branding configuration including custom teacher logo",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Fixed identifier 'branding'"
+        },
+        "logoUrl": {
+          "type": "string",
+          "maxLength": 500000,
+          "description": "Uploaded data URL or image link for platform logo"
+        },
+        "badgeChar": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10,
+          "description": "Selected Arabic letter for the platform emblem"
+        },
+        "badgeColor": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 20,
+          "description": "Selected hex color for the platform emblem and animated ring"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": ["id", "logoUrl", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/Student" },
+      "description": "Permanent classroom students (no login required, deletions forbidden)"
+    },
+    "/certificates/{certId}": {
+      "schema": { "$ref": "#/entities/IssuedCertificate" },
+      "description": "Permanent archive of issued student certificates"
+    },
+    "/customWords/{wordId}": {
+      "schema": { "$ref": "#/entities/CustomWord" },
+      "description": "Custom vocabulary words and compressed images added by the teacher"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/BrandingSettings" },
+      "description": "Platform settings such as the uploaded or linked teacher logo"
+    }
+  }
+}

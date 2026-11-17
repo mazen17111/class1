@@ -11,6 +11,8 @@ interface QuizResultModalProps {
   letter: ArabicLetter;
   score: number;
   total: number;
+  initialThemeId?: string;
+  onThemeChange?: (themeId: string) => void;
   onNewStudent: () => void;
   onRetry: () => void;
   onChangeLetter: () => void;
@@ -24,6 +26,8 @@ export const QuizResultModal: React.FC<QuizResultModalProps> = ({
   letter,
   score,
   total,
+  initialThemeId,
+  onThemeChange,
   onNewStudent,
   onRetry,
   onChangeLetter,
@@ -33,8 +37,15 @@ export const QuizResultModal: React.FC<QuizResultModalProps> = ({
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
 
-  // Automatically select a different theme each time
+  // Automatically select a different theme each time (or use provided initialThemeId)
   const [currentThemeIndex, setCurrentThemeIndex] = useState(() => {
+    if (initialThemeId) {
+      const idx = CERTIFICATE_THEMES.findIndex((t) => t.id === initialThemeId);
+      if (idx !== -1) {
+        lastThemeIndex = idx;
+        return idx;
+      }
+    }
     let nextIndex = 0;
     if (lastThemeIndex === -1) {
       nextIndex = Math.floor(Math.random() * CERTIFICATE_THEMES.length);
@@ -71,6 +82,7 @@ export const QuizResultModal: React.FC<QuizResultModalProps> = ({
     const nextIdx = (currentThemeIndex + 1) % CERTIFICATE_THEMES.length;
     lastThemeIndex = nextIdx;
     setCurrentThemeIndex(nextIdx);
+    onThemeChange?.(CERTIFICATE_THEMES[nextIdx].id);
     confetti({
       particleCount: 25,
       spread: 60,
@@ -82,6 +94,7 @@ export const QuizResultModal: React.FC<QuizResultModalProps> = ({
     sound.playClick();
     lastThemeIndex = index;
     setCurrentThemeIndex(index);
+    onThemeChange?.(CERTIFICATE_THEMES[index].id);
   };
 
   // Canvas-based fallback generator in case DOM rasterization fails (Landscape 1200x750)

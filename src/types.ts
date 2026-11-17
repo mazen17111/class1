@@ -91,7 +91,31 @@ export type AppStage =
   | 'quiz_setup'          // إعداد النشاط وعدد الأسئلة
   | 'quiz_active'         // حل الأسئلة التفاعلية
   | 'quiz_result'         // النتيجة والاحتفال
-  | 'presentation_studio';// استوديو إصدار وتعديل باوربوينت و PDF
+  | 'presentation_studio' // استوديو إصدار وتعديل باوربوينت و PDF
+  | 'whiteboard'          // السبورة الذكية التفاعلية
+  | 'issued_certificates';// أرشيف الشهادات الصادرة
+
+export interface IssuedCertificate {
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentAvatarColor: string;
+  letterId: string;
+  letterChar: string;
+  letterName: string;
+  score: number;
+  total: number;
+  percentage: number;
+  themeId: string;
+  issuedDateLabel: string;
+  createdAtMs: number;
+}
+
+export interface BrandSettings {
+  logoUrl: string;
+  badgeChar: string;
+  badgeColor: string;
+}
 
 export type DeckPatternType = 'waves' | 'geometric' | 'diagonal' | 'arches' | 'ribbons' | 'dots';
 

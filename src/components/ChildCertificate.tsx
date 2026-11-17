@@ -181,6 +181,7 @@ interface ChildCertificateProps {
   total: number;
   percentage: number;
   theme: CertificateTheme;
+  issuedDate?: string;
   certificateRef: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -191,13 +192,16 @@ export const ChildCertificate: React.FC<ChildCertificateProps> = ({
   total,
   percentage,
   theme,
+  issuedDate,
   certificateRef,
 }) => {
-  const currentDate = new Intl.DateTimeFormat('ar-EG', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  }).format(new Date());
+  const currentDate =
+    issuedDate ||
+    new Intl.DateTimeFormat('ar-EG', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    }).format(new Date());
 
   return (
     <div
