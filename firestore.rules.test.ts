@@ -23,8 +23,8 @@ export const DIRTY_DOZEN_PAYLOADS: SecurityTestCase[] = [
   },
   {
     id: 2,
-    name: 'Issued Certificate Deletion Forbidden',
-    collectionPath: '/certificates/cert_1',
+    name: 'Issued Certificate Deletion With Invalid ID Forbidden',
+    collectionPath: `/certificates/${'c'.repeat(200)}`,
     operation: 'delete',
     expectedOutcome: 'PERMISSION_DENIED',
   },

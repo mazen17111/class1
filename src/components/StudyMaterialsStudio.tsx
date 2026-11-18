@@ -168,6 +168,16 @@ function normalizeExternalUrl(rawUrl: string): {
   return { resolvedUrl: trimmed, likelyKind: 'iframe' };
 }
 
+function parseTypedPageNumber(raw: string): number | null {
+  const normalized = raw
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[^0-9]/g, '');
+  if (!normalized) return null;
+  const num = Number.parseInt(normalized, 10);
+  return Number.isFinite(num) ? num : null;
+}
+
 function fileToCompressedImageDataUrl(
   file: File
 ): Promise<{ dataUrl: string; width: number; height: number }> {
@@ -230,8 +240,12 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
 
   // Book Viewer state
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageInputStr, setPageInputStr] = useState('1');
   const [totalPages, setTotalPages] = useState(1);
   const [zoom, setZoom] = useState(1);
+  const isEditingPageRef = useRef(false);
+  const programmaticScrollLockRef = useRef<number | null>(null);
+  const pageJumpDebounceRef = useRef<number | null>(null);
   const [renderMode, setRenderMode] = useState<
     'pdf' | 'image' | 'iframe' | 'loading' | 'error'
   >('loading');
@@ -378,8 +392,20 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
   useEffect(() => {
     return () => {
       tryExitFullscreen();
+      if (programmaticScrollLockRef.current !== null) {
+        window.clearTimeout(programmaticScrollLockRef.current);
+      }
+      if (pageJumpDebounceRef.current !== null) {
+        window.clearTimeout(pageJumpDebounceRef.current);
+      }
     };
   }, [tryExitFullscreen]);
+
+  useEffect(() => {
+    if (!isEditingPageRef.current && programmaticScrollLockRef.current === null) {
+      setPageInputStr(String(currentPage));
+    }
+  }, [currentPage]);
 
   // Save per-page annotation to IndexedDB + Firestore
   const handleSavePageAnnotation = useCallback(
@@ -413,6 +439,7 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
 
   const handleVisiblePdfPageChange = useCallback(
     (pageNum: number) => {
+      if (programmaticScrollLockRef.current !== null) return;
       setCurrentPage(pageNum);
       if (activeMaterialRef.current) {
         updateStudyMaterialProgressInFirestore(activeMaterialRef.current.id, {
@@ -430,12 +457,75 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
     []
   );
 
-  const scrollToPdfPage = (pageNum: number) => {
-    const clamped = Math.max(1, Math.min(totalPages, pageNum));
-    setCurrentPage(clamped);
-    const el = pageElementsRef.current[clamped];
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const scrollToPdfPage = useCallback(
+    (pageNum: number) => {
+      if (pageJumpDebounceRef.current !== null) {
+        window.clearTimeout(pageJumpDebounceRef.current);
+        pageJumpDebounceRef.current = null;
+      }
+      if (programmaticScrollLockRef.current !== null) {
+        window.clearTimeout(programmaticScrollLockRef.current);
+      }
+
+      const clamped = Math.max(1, Math.min(totalPages, Math.round(pageNum)));
+      setCurrentPage(clamped);
+      setPageInputStr(String(clamped));
+
+      // Lock observer briefly while smooth scroll glides past intermediate pages
+      programmaticScrollLockRef.current = window.setTimeout(() => {
+        programmaticScrollLockRef.current = null;
+      }, 900);
+
+      const el = pageElementsRef.current[clamped];
+      const container = scrollContainerRef.current;
+      if (el && container) {
+        const containerRect = container.getBoundingClientRect();
+        const elRect = el.getBoundingClientRect();
+        const topOffset = isBookFullscreen ? 78 : 14;
+        const targetTop = Math.max(
+          0,
+          container.scrollTop + (elRect.top - containerRect.top) - topOffset
+        );
+        container.scrollTo({ top: targetTop, behavior: 'smooth' });
+      } else if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+      if (activeMaterialRef.current) {
+        updateStudyMaterialProgressInFirestore(activeMaterialRef.current.id, {
+          lastPage: clamped,
+        }).catch(() => {});
+      }
+    },
+    [isBookFullscreen, totalPages]
+  );
+
+  const handlePageInputChange = (raw: string) => {
+    setPageInputStr(raw);
+    if (pageJumpDebounceRef.current !== null) {
+      window.clearTimeout(pageJumpDebounceRef.current);
+      pageJumpDebounceRef.current = null;
+    }
+    const parsed = parseTypedPageNumber(raw);
+    if (parsed !== null && parsed >= 1 && parsed <= totalPages) {
+      pageJumpDebounceRef.current = window.setTimeout(() => {
+        scrollToPdfPage(parsed);
+      }, 500);
+    }
+  };
+
+  const commitPageInput = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (pageJumpDebounceRef.current !== null) {
+      window.clearTimeout(pageJumpDebounceRef.current);
+      pageJumpDebounceRef.current = null;
+    }
+    const parsed = parseTypedPageNumber(pageInputStr);
+    if (parsed !== null) {
+      sound.playClick();
+      scrollToPdfPage(parsed);
+    } else {
+      setPageInputStr(String(currentPage));
     }
   };
 
@@ -1720,9 +1810,12 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
                     </button>
                   )}
 
-                  {/* Page Navigation */}
+                  {/* Page Navigation with Editable Smooth Page Jump */}
                   {totalPages > 1 && (
-                    <div className="flex items-center gap-1 bg-slate-900/40 px-2 py-1 rounded-xl border border-white/15 text-white">
+                    <form
+                      onSubmit={commitPageInput}
+                      className="flex items-center gap-1 bg-slate-900/45 px-2 py-1 rounded-xl border border-white/20 text-white"
+                    >
                       <button
                         type="button"
                         onClick={() => scrollToPdfPage(currentPage - 1)}
@@ -1732,8 +1825,34 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
                       >
                         <ChevronUp className="w-3.5 h-3.5" />
                       </button>
-                      <span className="text-[11px] font-black tabular-nums px-1 whitespace-nowrap">
-                        {currentPage} / {totalPages}
+                      <input
+                        id="input-pdf-page-fs"
+                        type="text"
+                        inputMode="numeric"
+                        dir="ltr"
+                        aria-label="رقم الصفحة"
+                        title="اكتب رقم الصفحة للانتقال إليها بسلاسة"
+                        value={pageInputStr}
+                        onFocus={(e) => {
+                          isEditingPageRef.current = true;
+                          e.currentTarget.select();
+                        }}
+                        onBlur={() => {
+                          isEditingPageRef.current = false;
+                          commitPageInput();
+                        }}
+                        onChange={(e) => handlePageInputChange(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            e.stopPropagation();
+                            setPageInputStr(String(currentPage));
+                            e.currentTarget.blur();
+                          }
+                        }}
+                        className="w-11 px-1 py-0.5 rounded-lg bg-white/15 focus:bg-white focus:text-slate-900 border border-white/25 text-center text-[11px] font-black tabular-nums text-white outline-hidden transition-colors"
+                      />
+                      <span className="text-[11px] font-black tabular-nums px-0.5 text-white/85 whitespace-nowrap">
+                        / {totalPages}
                       </span>
                       <button
                         type="button"
@@ -1744,7 +1863,7 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
                       >
                         <ChevronDown className="w-3.5 h-3.5" />
                       </button>
-                    </div>
+                    </form>
                   )}
 
                   {/* Zoom */}
@@ -2162,7 +2281,10 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
 
               <div className="flex items-center gap-2 flex-wrap">
                 {totalPages > 1 && (
-                  <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200">
+                  <form
+                    onSubmit={commitPageInput}
+                    className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200"
+                  >
                     <button
                       type="button"
                       onClick={() => scrollToPdfPage(currentPage - 1)}
@@ -2172,9 +2294,35 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
                     >
                       <ChevronUp className="w-4 h-4" />
                     </button>
-                    <span className="text-xs font-black text-slate-700 px-1 tabular-nums">
-                      صفحة {currentPage} من {totalPages}
+                    <span className="text-xs font-black text-slate-600">صفحة</span>
+                    <input
+                      id="input-pdf-page-windowed"
+                      type="text"
+                      inputMode="numeric"
+                      dir="ltr"
+                      aria-label="رقم الصفحة"
+                      title="اكتب رقم الصفحة للانتقال إليها بسلاسة"
+                      value={pageInputStr}
+                      onFocus={(e) => {
+                        isEditingPageRef.current = true;
+                        e.currentTarget.select();
+                      }}
+                      onBlur={() => {
+                        isEditingPageRef.current = false;
+                        commitPageInput();
+                      }}
+                      onChange={(e) => handlePageInputChange(e.target.value)}
+                      className="w-12 px-1.5 py-0.5 rounded-lg bg-white border border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 text-center text-xs font-black text-slate-900 tabular-nums outline-hidden"
+                    />
+                    <span className="text-xs font-black text-slate-700 px-0.5 tabular-nums">
+                      من {totalPages}
                     </span>
+                    <button
+                      type="submit"
+                      className="px-2 py-0.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-black transition-colors"
+                    >
+                      انتقال
+                    </button>
                     <button
                       type="button"
                       onClick={() => scrollToPdfPage(currentPage + 1)}
@@ -2184,7 +2332,7 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
                     >
                       <ChevronDown className="w-4 h-4" />
                     </button>
-                  </div>
+                  </form>
                 )}
 
                 <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-xl border border-slate-200">

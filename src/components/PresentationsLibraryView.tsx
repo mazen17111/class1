@@ -20,12 +20,32 @@ import {
   Maximize2,
   Minimize2,
   Loader2,
+  Upload,
+  Link2,
+  FileUp,
+  ExternalLink,
 } from 'lucide-react';
-import { PresentationSlide, SavedPresentation, WordItem } from '../types';
+import {
+  ExternalPresentationType,
+  PresentationSlide,
+  SavedPresentation,
+  SlideTransitionType,
+  WordItem,
+} from '../types';
 import { ARABIC_LETTERS } from '../data/arabicData';
 import { SlideRenderer } from './SlideRenderer';
-import { getTransitionClassName, getTransitionLabel } from '../utils/slideTransitions';
+import {
+  SLIDE_TRANSITION_OPTIONS,
+  getTransitionClassName,
+  getTransitionLabel,
+} from '../utils/slideTransitions';
 import { DECK_THEMES, generateLetterPresentationDeck } from '../utils/deckGenerator';
+import {
+  importPptxToSlides,
+  importPdfToPresentationSlides,
+  importImagesToPresentationSlides,
+  normalizeExternalPresentationUrl,
+} from '../utils/pptxImporter';
 import { sound } from '../utils/audio';
 import {
   getLocalPresentationById,
@@ -43,8 +63,11 @@ interface PresentationsLibraryViewProps {
   presentations: SavedPresentation[];
   words?: WordItem[];
   onCreateNew: () => void;
+  onImportExternalDeck: (deck: SavedPresentation) => Promise<void>;
   onEditPresentation: (presentation: SavedPresentation) => void;
   onDeletePresentation: (id: string) => Promise<void>;
+  initialOpenExternalModal?: boolean;
+  onClearInitialOpenExternalModal?: () => void;
   onBack: () => void;
 }
 
@@ -121,14 +144,35 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
   presentations,
   words = [],
   onCreateNew,
+  onImportExternalDeck,
   onEditPresentation,
   onDeletePresentation,
+  initialOpenExternalModal = false,
+  onClearInitialOpenExternalModal,
   onBack,
 }) => {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [loadingDeckId, setLoadingDeckId] = useState<string | null>(null);
   const [explainerError, setExplainerError] = useState<string | null>(null);
   const [hydratedSlidesMap, setHydratedSlidesMap] = useState<Record<string, PresentationSlide[]>>({});
+
+  // External PowerPoint Import Modal State
+  const [showExternalModal, setShowExternalModal] = useState(initialOpenExternalModal);
+  const [extTab, setExtTab] = useState<'file' | 'url'>('file');
+  const [extTitle, setExtTitle] = useState('');
+  const [extUrl, setExtUrl] = useState('');
+  const [extTransitionType, setExtTransitionType] = useState<SlideTransitionType>('fade');
+  const [extProgress, setExtProgress] = useState<{ current: number; total: number } | null>(null);
+  const [extError, setExtError] = useState('');
+  const [isImportingExternal, setIsImportingExternal] = useState(false);
+
+  useEffect(() => {
+    if (initialOpenExternalModal) {
+      setShowExternalModal(true);
+      setExtError('');
+      onClearInitialOpenExternalModal?.();
+    }
+  }, [initialOpenExternalModal, onClearInitialOpenExternalModal]);
 
   // Full Explainer Mode State ("اشرح")
   const [explainingDeck, setExplainingDeck] = useState<SavedPresentation | null>(null);
@@ -279,6 +323,20 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
 
   const resolveDeckWithSlides = useCallback(
     async (deck: SavedPresentation): Promise<SavedPresentation> => {
+      if (deck.externalType === 'embed_url' && deck.externalUrl) {
+        const placeholderSlide: PresentationSlide =
+          (deck.slides && deck.slides[0]) || {
+            id: `embed_${deck.id}`,
+            kind: 'custom',
+            layoutVariant: 'custom-photo',
+            title: deck.title,
+            subtitle: 'عرض تقديمي خارجي تفاعلي',
+            items: [],
+            teacherNote: deck.externalUrl,
+          };
+        return normalizeDeckWithTheme(deck, [placeholderSlide]);
+      }
+
       const cached = hydratedSlidesMap[deck.id] || deck.slides;
       if (cached && cached.length > 0) {
         return normalizeDeckWithTheme(deck, cached);
@@ -320,6 +378,154 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
     },
     [hydratedSlidesMap, normalizeDeckWithTheme, words]
   );
+
+  const handleImportExternalFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    setExtError('');
+    setIsImportingExternal(true);
+    setExtProgress(null);
+
+    try {
+      const files: File[] = Array.from(fileList);
+      const firstFile = files[0];
+      const lowerName = firstFile.name.toLowerCase();
+      let importedSlides: PresentationSlide[] = [];
+      let extType: ExternalPresentationType = 'pptx_file';
+
+      if (files.length === 1 && lowerName.endsWith('.pptx')) {
+        extType = 'pptx_file';
+        importedSlides = await importPptxToSlides(firstFile, (cur, tot) =>
+          setExtProgress({ current: cur, total: tot })
+        );
+      } else if (files.length === 1 && lowerName.endsWith('.ppt')) {
+        throw new Error(
+          'صيغة .ppt القديمة غير مدعومة مباشرة في المتصفح. يرجى حفظ الملف بصيغة .pptx أو .pdf ثم رفعه.'
+        );
+      } else if (
+        files.length === 1 &&
+        (firstFile.type === 'application/pdf' || lowerName.endsWith('.pdf'))
+      ) {
+        extType = 'pdf_slides';
+        importedSlides = await importPdfToPresentationSlides(firstFile, (cur, tot) =>
+          setExtProgress({ current: cur, total: tot })
+        );
+      } else if (files.every((f) => f.type.startsWith('image/'))) {
+        extType = 'pptx_file';
+        importedSlides = await importImagesToPresentationSlides(files, (cur, tot) =>
+          setExtProgress({ current: cur, total: tot })
+        );
+      } else {
+        throw new Error('يرجى اختيار ملف باوربوينت (.pptx) أو ملف PDF أو صور الشرائح.');
+      }
+
+      if (importedSlides.length === 0) {
+        throw new Error('لم يتم استخراج أي شرائح من الملف المختار.');
+      }
+
+      const defaultTitle =
+        extTitle.trim() ||
+        firstFile.name.replace(/\.[^.]+$/, '') ||
+        'عرض باوربوينت خارجي';
+      const now = Date.now();
+      const newDeck: SavedPresentation = {
+        id: `pres_ext_${now}`,
+        title: defaultTitle.slice(0, 120),
+        letterId: ARABIC_LETTERS[0].id,
+        letterChar: ARABIC_LETTERS[0].char,
+        letterName: ARABIC_LETTERS[0].name,
+        theme: DECK_THEMES[2] || DECK_THEMES[0],
+        slideCount: importedSlides.length,
+        slides: importedSlides,
+        transitionEnabled: extTransitionType !== 'none',
+        transitionType: extTransitionType,
+        createdAtMs: now,
+        updatedAtMs: now,
+        isExternal: true,
+        externalType: extType,
+      };
+
+      setHydratedSlidesMap((prev) => ({ ...prev, [newDeck.id]: importedSlides }));
+      await onImportExternalDeck(newDeck);
+      sound.playSuccess();
+      setShowExternalModal(false);
+      setExtTitle('');
+      setExtUrl('');
+      setExtProgress(null);
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'تعذر استيراد ملف الباوربوينت الخارجي. تأكد من سلامة الملف وحاول مجدداً.';
+      setExtError(msg);
+    } finally {
+      setIsImportingExternal(false);
+      setExtProgress(null);
+      e.target.value = '';
+    }
+  };
+
+  const handleSaveExternalUrlDeck = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setExtError('');
+    const raw = extUrl.trim();
+    if (!raw) {
+      setExtError('يرجى إدخال رابط العرض الخارجي أو كود التضمين.');
+      return;
+    }
+
+    const { embedUrl, providerLabel } = normalizeExternalPresentationUrl(raw);
+    if (!/^https?:\/\//i.test(embedUrl)) {
+      setExtError('يرجى إدخال رابط يبدأ بـ https:// أو http://');
+      return;
+    }
+
+    setIsImportingExternal(true);
+    try {
+      const now = Date.now();
+      const title = extTitle.trim() || `عرض خارجي (${providerLabel})`;
+      const coverSlide: PresentationSlide = {
+        id: `ext_url_cover_${now}`,
+        kind: 'custom',
+        layoutVariant: 'custom-photo',
+        title,
+        subtitle: `عرض مرتبط من ${providerLabel}`,
+        badgeText: 'عرض خارجي',
+        bodyText: embedUrl,
+        items: [],
+        teacherNote: 'افتح وضع «اشرح» للعرض المباشر بملء الشاشة والكتابة بالأقلام والليزر.',
+      };
+
+      const newDeck: SavedPresentation = {
+        id: `pres_url_${now}`,
+        title: title.slice(0, 120),
+        letterId: ARABIC_LETTERS[0].id,
+        letterChar: ARABIC_LETTERS[0].char,
+        letterName: ARABIC_LETTERS[0].name,
+        theme: DECK_THEMES[1] || DECK_THEMES[0],
+        slideCount: 1,
+        slides: [coverSlide],
+        transitionEnabled: false,
+        transitionType: 'none',
+        createdAtMs: now,
+        updatedAtMs: now,
+        isExternal: true,
+        externalType: 'embed_url',
+        externalUrl: embedUrl,
+      };
+
+      setHydratedSlidesMap((prev) => ({ ...prev, [newDeck.id]: [coverSlide] }));
+      await onImportExternalDeck(newDeck);
+      sound.playSuccess();
+      setShowExternalModal(false);
+      setExtTitle('');
+      setExtUrl('');
+    } catch {
+      setExtError('حدث خطأ أثناء حفظ رابط العرض الخارجي.');
+    } finally {
+      setIsImportingExternal(false);
+    }
+  };
 
   const closeExplainer = useCallback(() => {
     tryExitFullscreen();
@@ -905,10 +1111,22 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
                 )}
               </button>
 
-              {/* Compact Slide Counter */}
-              <span className="px-2 py-1 rounded-xl bg-slate-900/40 border border-white/15 text-white/95 font-black text-xs tabular-nums whitespace-nowrap shrink-0">
-                {slideIndex + 1} / {explainingDeck.slides.length}
-              </span>
+              {/* Compact Slide Counter / External Link */}
+              {explainingDeck.externalType === 'embed_url' && explainingDeck.externalUrl ? (
+                <a
+                  href={explainingDeck.externalUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-sky-600/80 hover:bg-sky-600 border border-white/25 text-white font-black text-xs whitespace-nowrap shrink-0"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>فتح خارجياً</span>
+                </a>
+              ) : (
+                <span className="px-2 py-1 rounded-xl bg-slate-900/40 border border-white/15 text-white/95 font-black text-xs tabular-nums whitespace-nowrap shrink-0">
+                  {slideIndex + 1} / {explainingDeck.slides.length}
+                </span>
+              )}
 
               {/* Laser Pointer */}
               <button
@@ -1179,12 +1397,12 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
         <div
           ref={viewportBoxRef}
           onClick={() => {
-            if (activeTool === 'hand') {
+            if (activeTool === 'hand' && explainingDeck.externalType !== 'embed_url') {
               goToSlide(slideIndex + 1);
             }
           }}
           onContextMenu={(e) => {
-            if (activeTool === 'hand') {
+            if (activeTool === 'hand' && explainingDeck.externalType !== 'embed_url') {
               e.preventDefault();
               goToSlide(slideIndex - 1);
             }
@@ -1208,27 +1426,36 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
             }}
             className={`relative overflow-hidden bg-white shrink-0 ${transitionCls}`}
           >
-            {/* Scaled Full-Crisp Slide Renderer */}
-            <div
-              style={{
-                width: 1280,
-                height: 720,
-                transform: `scale(${slideScale})`,
-                transformOrigin: 'top left',
-              }}
-              className="pointer-events-none select-none"
-            >
-              {activeSlide && (
-                <SlideRenderer
-                  slide={activeSlide}
-                  theme={explainingDeck.theme}
-                  letter={activeLetter}
-                  slideIndex={slideIndex}
-                  totalSlides={explainingDeck.slides.length}
-                  isEditable={false}
-                />
-              )}
-            </div>
+            {explainingDeck.externalType === 'embed_url' && explainingDeck.externalUrl ? (
+              <iframe
+                src={explainingDeck.externalUrl}
+                title={explainingDeck.title}
+                className="w-full h-full border-0 bg-white"
+                allowFullScreen
+              />
+            ) : (
+              /* Scaled Full-Crisp Slide Renderer */
+              <div
+                style={{
+                  width: 1280,
+                  height: 720,
+                  transform: `scale(${slideScale})`,
+                  transformOrigin: 'top left',
+                }}
+                className="pointer-events-none select-none"
+              >
+                {activeSlide && (
+                  <SlideRenderer
+                    slide={activeSlide}
+                    theme={explainingDeck.theme}
+                    letter={activeLetter}
+                    slideIndex={slideIndex}
+                    totalSlides={explainingDeck.slides.length}
+                    isEditable={false}
+                  />
+                )}
+              </div>
+            )}
 
             {/* Transparent Annotation Ink Layer */}
             <canvas
@@ -1281,6 +1508,20 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
 
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
+            id="btn-library-import-external-pptx"
+            type="button"
+            onClick={() => {
+              sound.playClick();
+              setExtError('');
+              setShowExternalModal(true);
+            }}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-sm shadow-sm transition-all whitespace-nowrap shrink-0"
+          >
+            <Upload className="w-4 h-4 text-amber-400" />
+            <span>إضافة باوربوينت خارجي</span>
+          </button>
+
+          <button
             id="btn-library-create-pptx"
             type="button"
             onClick={() => {
@@ -1330,19 +1571,33 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
             لا توجد عروض تقديمية محفوظة بعد
           </h3>
           <p className="text-slate-600 text-sm sm:text-base max-w-lg mx-auto mb-6">
-            أنشئ باوربوينت جديداً، اختر شكل الانتقال بين الشرائح، ثم اضغط «حفظ في المنصة» ليظهر هنا جاهزاً للشرح الفوري أمام الطلاب.
+            أنشئ باوربوينت جديداً، أو استورد ملف باوربوينت خارجي (PPTX / PDF / صور) أو رابط Google Slides ليظهر هنا جاهزاً للشرح الفوري أمام الطلاب.
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              sound.playClick();
-              onCreateNew();
-            }}
-            className="inline-flex items-center gap-2 px-7 py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-black text-base shadow-lg active:scale-95 transition-all"
-          >
-            <Plus className="w-5 h-5 text-amber-400" />
-            <span>إصدار وحفظ أول باوربوينت</span>
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                sound.playClick();
+                setExtError('');
+                setShowExternalModal(true);
+              }}
+              className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-base shadow-md active:scale-95 transition-all"
+            >
+              <Upload className="w-5 h-5" />
+              <span>إضافة باوربوينت خارجي</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                sound.playClick();
+                onCreateNew();
+              }}
+              className="inline-flex items-center gap-2 px-7 py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-black text-base shadow-lg active:scale-95 transition-all"
+            >
+              <Plus className="w-5 h-5 text-amber-400" />
+              <span>إصدار وحفظ أول باوربوينت</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1371,22 +1626,43 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
                 {/* Metadata & Actions */}
                 <div className="p-5 flex-1 flex flex-col justify-between gap-4">
                   <div>
-                    <h3 className="text-lg font-black text-slate-900 leading-snug mb-1.5">
-                      {deck.title}
-                    </h3>
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-500">
-                      <span className="tabular-nums">{deck.slideCount} شرائح</span>
-                      <span aria-hidden="true">·</span>
-                      <span>حرف ({deck.letterChar})</span>
-                      <span aria-hidden="true">·</span>
-                      <span className="inline-flex items-center gap-1">
-                        <Wand2 className="w-3.5 h-3.5 text-amber-600" />
-                        <span>
-                          {deck.transitionEnabled && deck.transitionType !== 'none'
-                            ? `انتقال: ${getTransitionLabel(deck.transitionType)}`
-                            : 'انتقال عادي'}
+                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                      <h3 className="text-lg font-black text-slate-900 leading-snug">
+                        {deck.title}
+                      </h3>
+                      {deck.isExternal && (
+                        <span className="px-2 py-0.5 rounded-lg bg-sky-100 text-sky-800 border border-sky-200 text-[11px] font-black shrink-0">
+                          {deck.externalType === 'embed_url'
+                            ? 'رابط خارجي'
+                            : deck.externalType === 'pdf_slides'
+                            ? 'PDF خارجي'
+                            : 'PPTX خارجي'}
                         </span>
-                      </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-500">
+                      {deck.externalType === 'embed_url' ? (
+                        <span>عرض مدمج جاهز للشرح</span>
+                      ) : (
+                        <>
+                          <span className="tabular-nums">{deck.slideCount} شرائح</span>
+                          {!deck.isExternal && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span>حرف ({deck.letterChar})</span>
+                            </>
+                          )}
+                          <span aria-hidden="true">·</span>
+                          <span className="inline-flex items-center gap-1">
+                            <Wand2 className="w-3.5 h-3.5 text-amber-600" />
+                            <span>
+                              {deck.transitionEnabled && deck.transitionType !== 'none'
+                                ? `انتقال: ${getTransitionLabel(deck.transitionType)}`
+                                : 'انتقال عادي'}
+                            </span>
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -1410,15 +1686,27 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
                     </button>
 
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => handleOpenEdit(deck)}
-                        className="flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs flex items-center justify-center gap-1.5 transition-colors"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                        <span>تعديل الشرائح</span>
-                      </button>
+                      {deck.externalType === 'embed_url' && deck.externalUrl ? (
+                        <a
+                          href={deck.externalUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex-1 py-2 px-3 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 font-black text-xs flex items-center justify-center gap-1.5 transition-colors"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>فتح الرابط الأصلي</span>
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleOpenEdit(deck)}
+                          className="flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs flex items-center justify-center gap-1.5 transition-colors"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>تعديل الشرائح</span>
+                        </button>
+                      )}
 
                       {confirmDeleteId === deck.id ? (
                         <div className="flex items-center gap-1">
@@ -1457,6 +1745,192 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* EXTERNAL POWERPOINT IMPORT MODAL */}
+      {showExternalModal && (
+        <div className="fixed inset-0 z-[10000] bg-slate-950/65 backdrop-blur-xs flex items-center justify-center p-4">
+          <div
+            dir="rtl"
+            className="w-full max-w-xl bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden"
+          >
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0">
+                  <Upload className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-lg leading-tight">
+                    إضافة باوربوينت خارجي
+                  </h3>
+                  <p className="text-xs text-slate-300 font-medium">
+                    استيراد ملف PPTX / PDF / صور أو رابط Google Slides / PowerPoint
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isImportingExternal}
+                onClick={() => setShowExternalModal(false)}
+                className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white disabled:opacity-40"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Tabs */}
+              <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-slate-100 border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExtTab('file');
+                    setExtError('');
+                  }}
+                  className={`py-2.5 px-3 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all ${
+                    extTab === 'file'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <FileUp className="w-4 h-4 text-amber-600" />
+                  <span>رفع ملف PPTX / PDF / صور</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExtTab('url');
+                    setExtError('');
+                  }}
+                  className={`py-2.5 px-3 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all ${
+                    extTab === 'url'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Link2 className="w-4 h-4 text-sky-600" />
+                  <span>رابط باوربوينت / Google Slides</span>
+                </button>
+              </div>
+
+              {/* Title */}
+              <div>
+                <label className="block text-xs font-black text-slate-700 mb-1.5">
+                  عنوان العرض التقديمي (اختياري — يُؤخذ تلقائياً من اسم الملف)
+                </label>
+                <input
+                  type="text"
+                  value={extTitle}
+                  onChange={(e) => setExtTitle(e.target.value)}
+                  placeholder="مثال: درس حروف المد - مراجعة"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-200 outline-hidden text-sm font-bold text-slate-900"
+                />
+              </div>
+
+              {extTab === 'file' ? (
+                <div className="space-y-4">
+                  {/* Slide transition choice */}
+                  <div>
+                    <label className="block text-xs font-black text-slate-700 mb-1.5">
+                      حركة الانتقال بين الشرائح عند الشرح
+                    </label>
+                    <select
+                      value={extTransitionType}
+                      onChange={(e) =>
+                        setExtTransitionType(e.target.value as SlideTransitionType)
+                      }
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-sm font-bold text-slate-900 outline-hidden focus:border-amber-500"
+                    >
+                      <option value="none">بدون انتقال</option>
+                      {SLIDE_TRANSITION_OPTIONS.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Upload dropzone */}
+                  <label
+                    className={`block rounded-2xl border-2 border-dashed p-6 text-center transition-all ${
+                      isImportingExternal
+                        ? 'border-amber-400 bg-amber-50/70 cursor-wait'
+                        : 'border-slate-300 hover:border-amber-500 hover:bg-amber-50/40 cursor-pointer'
+                    }`}
+                  >
+                    <input
+                      id="input-upload-external-pptx"
+                      type="file"
+                      accept=".pptx,.ppt,.pdf,image/*"
+                      multiple
+                      disabled={isImportingExternal}
+                      onChange={handleImportExternalFiles}
+                      className="hidden"
+                    />
+                    {isImportingExternal ? (
+                      <div className="space-y-2">
+                        <Loader2 className="w-8 h-8 animate-spin text-amber-600 mx-auto" />
+                        <div className="font-black text-sm text-slate-900">
+                          {extProgress
+                            ? `جاري استيراد شريحة ${extProgress.current} من ${extProgress.total}...`
+                            : 'جاري قراءة الشرائح وتجهيزها للعرض...'}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="w-12 h-12 mx-auto rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                          <Upload className="w-6 h-6" />
+                        </div>
+                        <div className="font-black text-sm text-slate-900">
+                          اضغط لاختيار ملف باوربوينت (.pptx) أو PDF أو مجموعة صور شرائح
+                        </div>
+                        <div className="text-xs font-medium text-slate-500">
+                          يتم تحويل الشرائح تلقائياً للعرض بملء الشاشة والكتابة عليها بالأقلام والليزر
+                        </div>
+                      </div>
+                    )}
+                  </label>
+                </div>
+              ) : (
+                <form onSubmit={handleSaveExternalUrlDeck} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-black text-slate-700 mb-1.5">
+                      رابط العرض الخارجي أو كود التضمين (Google Slides / Canva / OneDrive / رابط .pptx)
+                    </label>
+                    <input
+                      id="input-external-pptx-url"
+                      type="text"
+                      dir="ltr"
+                      value={extUrl}
+                      onChange={(e) => setExtUrl(e.target.value)}
+                      placeholder="https://docs.google.com/presentation/d/..."
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-hidden text-sm font-medium text-slate-900"
+                    />
+                  </div>
+                  <button
+                    id="btn-submit-external-pptx-url"
+                    type="submit"
+                    disabled={isImportingExternal}
+                    className="w-full py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white font-black text-sm shadow-sm transition-all flex items-center justify-center gap-2"
+                  >
+                    {isImportingExternal ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                    ) : (
+                      <Link2 className="w-4 h-4 text-amber-400" />
+                    )}
+                    <span>حفظ العرض في العروض التقديمية</span>
+                  </button>
+                </form>
+              )}
+
+              {extError && (
+                <div className="px-4 py-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold">
+                  {extError}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

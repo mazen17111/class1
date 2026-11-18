@@ -120,7 +120,7 @@ service cloud.firestore {
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly(['themeId', 'updatedAt']);
 
-      allow delete: if false;
+      allow delete: if isValidId(certId);
     }
 
     // Teacher Custom Words & Compressed Images
@@ -266,7 +266,8 @@ service cloud.firestore {
         ])
         && data.keys().hasOnly([
           'id', 'title', 'letterId', 'letterChar', 'letterName',
-          'slideCount', 'transitionEnabled', 'transitionType', 'theme', 'createdAt', 'updatedAt'
+          'slideCount', 'transitionEnabled', 'transitionType', 'theme',
+          'isExternal', 'externalType', 'externalUrl', 'createdAt', 'updatedAt'
         ])
         && data.id is string && isValidId(data.id) && data.id == presentationId
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
@@ -276,6 +277,9 @@ service cloud.firestore {
         && data.slideCount is number && data.slideCount >= 1 && data.slideCount <= 100
         && data.transitionEnabled is bool
         && data.transitionType is string && data.transitionType in ['none', 'fade', 'slide', 'zoom', 'flip', 'curtain', 'cube']
+        && (!('isExternal' in data) || data.isExternal is bool)
+        && (!('externalType' in data) || (data.externalType is string && data.externalType in ['pptx_file', 'pdf_slides', 'embed_url']))
+        && (!('externalUrl' in data) || (data.externalUrl is string && data.externalUrl.size() <= 2000))
         && isValidDeckTheme(data.theme)
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
@@ -292,12 +296,14 @@ service cloud.firestore {
         && data.slideData.keys().hasOnly([
           'id', 'kind', 'layoutVariant', 'title', 'subtitle', 'badgeText',
           'highlightLetter', 'bodyText', 'items', 'uploadedImages', 'teacherNote',
-          'textAlign', 'headerLetterSide', 'columnsOverride', 'fontScale', 'swapPositions'
+          'textAlign', 'headerLetterSide', 'columnsOverride', 'fontScale', 'swapPositions',
+          'fullBleedImage'
         ])
         && data.slideData.id is string && data.slideData.id.size() >= 1 && data.slideData.id.size() <= 128
         && data.slideData.title is string && data.slideData.title.size() <= 300
         && data.slideData.subtitle is string && data.slideData.subtitle.size() <= 500
         && data.slideData.items is list && data.slideData.items.size() <= 50
+        && (!('fullBleedImage' in data.slideData) || data.slideData.fullBleedImage is bool)
         && data.updatedAt is timestamp;
     }
 
@@ -328,7 +334,8 @@ service cloud.firestore {
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'title', 'letterId', 'letterChar', 'letterName',
-          'slideCount', 'transitionEnabled', 'transitionType', 'theme', 'updatedAt'
+          'slideCount', 'transitionEnabled', 'transitionType', 'theme',
+          'isExternal', 'externalType', 'externalUrl', 'updatedAt'
         ]);
 
       allow delete: if isValidId(presentationId);

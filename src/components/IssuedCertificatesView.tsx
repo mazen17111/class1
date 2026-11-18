@@ -11,6 +11,7 @@ import {
   Sparkles,
   X,
   Palette,
+  Trash2,
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { IssuedCertificate, Student } from '../types';
@@ -21,20 +22,38 @@ import { sound } from '../utils/audio';
 interface IssuedCertificatesViewProps {
   certificates: IssuedCertificate[];
   onUpdateCertificateTheme: (certId: string, themeId: string) => void;
+  onDeleteCertificate: (certId: string) => Promise<void> | void;
   onBack: () => void;
 }
 
 export const IssuedCertificatesView: React.FC<IssuedCertificatesViewProps> = ({
   certificates,
   onUpdateCertificateTheme,
+  onDeleteCertificate,
   onBack,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [letterFilter, setLetterFilter] = useState<string>('all');
   const [selectedCert, setSelectedCert] = useState<IssuedCertificate | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
   const previewCertRef = useRef<HTMLDivElement>(null);
+
+  const handleConfirmDelete = async (certId: string) => {
+    sound.playClick();
+    setDeletingId(certId);
+    try {
+      await onDeleteCertificate(certId);
+      if (selectedCert?.id === certId) {
+        setSelectedCert(null);
+      }
+      setConfirmDeleteId(null);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const filteredCerts = useMemo(() => {
     return certificates.filter((c) => {
@@ -230,17 +249,54 @@ export const IssuedCertificatesView: React.FC<IssuedCertificatesViewProps> = ({
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => {
-                      sound.playClick();
-                      setSelectedCert(cert);
-                      setDownloadSuccess(false);
-                    }}
-                    className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
-                  >
-                    <Eye className="w-4 h-4 text-amber-400" />
-                    <span>عرض وتحميل الشهادة</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        sound.playClick();
+                        setSelectedCert(cert);
+                        setConfirmDeleteId(null);
+                        setDownloadSuccess(false);
+                      }}
+                      className="flex-1 py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
+                    >
+                      <Eye className="w-4 h-4 text-amber-400" />
+                      <span>عرض وتحميل الشهادة</span>
+                    </button>
+
+                    {confirmDeleteId === cert.id ? (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          id={`btn-confirm-delete-cert-${cert.id}`}
+                          type="button"
+                          disabled={deletingId === cert.id}
+                          onClick={() => handleConfirmDelete(cert.id)}
+                          className="px-2.5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white font-black text-xs transition-colors"
+                        >
+                          {deletingId === cert.id ? '...' : 'تأكيد'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="px-2.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors"
+                        >
+                          إلغاء
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        id={`btn-delete-cert-${cert.id}`}
+                        type="button"
+                        onClick={() => {
+                          sound.playClick();
+                          setConfirmDeleteId(cert.id);
+                        }}
+                        title="حذف الشهادة من الشهادات المحفوظة"
+                        className="p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 active:scale-95 transition-all shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -380,6 +436,38 @@ export const IssuedCertificatesView: React.FC<IssuedCertificatesViewProps> = ({
                 <Printer className="w-5 h-5 text-amber-700" />
                 <span>طباعة الشهادة</span>
               </button>
+
+              {confirmDeleteId === activeSelectedCert.id ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={deletingId === activeSelectedCert.id}
+                    onClick={() => handleConfirmDelete(activeSelectedCert.id)}
+                    className="px-5 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-black text-sm shadow-md transition-all"
+                  >
+                    {deletingId === activeSelectedCert.id ? 'جاري الحذف...' : 'تأكيد حذف الشهادة'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteId(null)}
+                    className="px-4 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-sm transition-all"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.playClick();
+                    setConfirmDeleteId(activeSelectedCert.id);
+                  }}
+                  className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-black text-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>حذف الشهادة</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

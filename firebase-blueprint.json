@@ -388,6 +388,20 @@
           "type": "object",
           "description": "Deck visual color and pattern theme"
         },
+        "isExternal": {
+          "type": "boolean",
+          "description": "Whether the presentation was imported from an external file or URL"
+        },
+        "externalType": {
+          "type": "string",
+          "enum": ["pptx_file", "pdf_slides", "embed_url"],
+          "description": "Source type of external PowerPoint presentation"
+        },
+        "externalUrl": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "External PowerPoint embed or presentation URL"
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",
@@ -492,7 +506,7 @@
     },
     "/certificates/{certId}": {
       "schema": { "$ref": "#/entities/IssuedCertificate" },
-      "description": "Permanent archive of issued student certificates"
+      "description": "Archive of issued student certificates (teacher can view, theme-edit, or delete)"
     },
     "/customWords/{wordId}": {
       "schema": { "$ref": "#/entities/CustomWord" },

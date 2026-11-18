@@ -62,6 +62,7 @@ import {
   deleteStudentsBatchFromFirestore,
   saveCertificateToFirestore,
   updateCertificateThemeInFirestore,
+  deleteCertificateFromFirestore,
   saveCustomWordToFirestore,
   deleteCustomWordFromFirestore,
   subscribeBrandSettings,
@@ -125,6 +126,10 @@ export default function App() {
   // Saved PowerPoint Presentations ("العروض التقديمية")
   const [savedPresentations, setSavedPresentations] = useState<SavedPresentation[]>([]);
   const [editingPresentation, setEditingPresentation] = useState<SavedPresentation | null>(null);
+  const [openExternalPptxModal, setOpenExternalPptxModal] = useState(false);
+
+  // Track explicitly deleted certificate IDs so snapshot merges never resurrect them
+  const deletedCertIdsRef = useRef<Set<string>>(new Set());
 
   // Direct Firestore startup sync & real-time subscriptions (no login)
   useEffect(() => {
@@ -162,8 +167,12 @@ export default function App() {
       unsubCerts = subscribeCertificates((remoteCerts) => {
         setIssuedCertificates((prev) => {
           const byId = new Map<string, IssuedCertificate>();
-          for (const c of prev) byId.set(c.id, c);
-          for (const c of remoteCerts) byId.set(c.id, c);
+          for (const c of prev) {
+            if (!deletedCertIdsRef.current.has(c.id)) byId.set(c.id, c);
+          }
+          for (const c of remoteCerts) {
+            if (!deletedCertIdsRef.current.has(c.id)) byId.set(c.id, c);
+          }
           const merged = Array.from(byId.values()).sort(
             (a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0)
           );
@@ -282,7 +291,7 @@ export default function App() {
     );
   };
 
-  // Certificate theme updates
+  // Certificate theme & deletion updates
   const handleUpdateCertificateTheme = (certId: string, themeId: string) => {
     setIssuedCertificates((prev) => {
       const updated = prev.map((c) => (c.id === certId ? { ...c, themeId } : c));
@@ -295,6 +304,23 @@ export default function App() {
     updateCertificateThemeInFirestore(certId, themeId).catch((e) =>
       console.error('Failed to update certificate theme in Firebase:', e)
     );
+  };
+
+  const handleDeleteCertificate = async (certId: string) => {
+    deletedCertIdsRef.current.add(certId);
+    setIssuedCertificates((prev) => {
+      const updated = prev.filter((c) => c.id !== certId);
+      saveCertificatesLocal(updated);
+      return updated;
+    });
+    if (certId === activeCertificateId) {
+      setActiveCertificateId(null);
+    }
+    try {
+      await deleteCertificateFromFirestore(certId);
+    } catch (e) {
+      console.error('Failed to delete certificate from Firebase:', e);
+    }
   };
 
   // Sound toggle
@@ -630,15 +656,25 @@ export default function App() {
             </div>
           </button>
 
-          {/* Prominent Rectangular Card: العروض التقديمية (Saved PowerPoints ready to Explain!) */}
-          <button
+          {/* Prominent Rectangular Card: العروض التقديمية (Saved & External PowerPoints ready to Explain!) */}
+          <div
             id="btn-open-presentations-library"
-            type="button"
+            role="button"
+            tabIndex={0}
             onClick={() => {
               sound.playClick();
+              setOpenExternalPptxModal(false);
               setStage('presentations_library');
             }}
-            className="w-full text-right rounded-2xl bg-gradient-to-l from-orange-600 via-amber-600 to-orange-700 hover:brightness-105 text-white px-6 py-4 sm:px-8 sm:py-5 shadow-md border border-orange-400/40 transition-all active:scale-[0.995] flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                sound.playClick();
+                setOpenExternalPptxModal(false);
+                setStage('presentations_library');
+              }
+            }}
+            className="w-full text-right rounded-2xl bg-gradient-to-l from-orange-600 via-amber-600 to-orange-700 hover:brightness-105 text-white px-6 py-4 sm:px-8 sm:py-5 shadow-md border border-orange-400/40 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
           >
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-white/15 backdrop-blur-xs text-white flex items-center justify-center shrink-0 border border-white/25 shadow-sm">
@@ -654,17 +690,34 @@ export default function App() {
                   )}
                 </div>
                 <div className="text-xs sm:text-sm font-medium text-amber-50 mt-0.5">
-                  عروض الباوربوينت المحفوظة في المنصة · اضغط «اشرح» للتكبير والانتقال بين الشرائح بالليزر والأقلام والمظلل
+                  عروض الباوربوينت المحفوظة والمستوردة في المنصة · اضغط «اشرح» للتكبير والكتابة والليزر
                 </div>
               </div>
             </div>
 
-            <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white group-hover:bg-amber-100 text-orange-900 font-black text-sm shrink-0 self-end sm:self-center transition-colors whitespace-nowrap">
-              <Presentation className="w-4 h-4" />
-              <span>فتح العروض للشرح</span>
-              <ArrowLeft className="w-4 h-4" />
+            <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0 flex-wrap">
+              <button
+                id="btn-add-external-pptx-card"
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  sound.playClick();
+                  setOpenExternalPptxModal(true);
+                  setStage('presentations_library');
+                }}
+                title="إضافة باوربوينت خارجي (PPTX أو PDF أو رابط)"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 font-black text-xs sm:text-sm shadow-md active:scale-95 transition-all whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" />
+                <span>باوربوينت خارجي</span>
+              </button>
+              <span className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white group-hover:bg-amber-100 text-orange-900 font-black text-sm transition-colors whitespace-nowrap">
+                <Presentation className="w-4 h-4" />
+                <span>فتح العروض للشرح</span>
+                <ArrowLeft className="w-4 h-4" />
+              </span>
             </div>
-          </button>
+          </div>
 
           {/* Prominent Large Rectangular Card: المواد الدراسية with + Upload/Link button */}
           <div
@@ -767,6 +820,7 @@ export default function App() {
           <IssuedCertificatesView
             certificates={issuedCertificates}
             onUpdateCertificateTheme={handleUpdateCertificateTheme}
+            onDeleteCertificate={handleDeleteCertificate}
             onBack={handleResetToStudents}
           />
         )}
@@ -792,11 +846,14 @@ export default function App() {
               setEditingPresentation(null);
               setStage('presentation_studio');
             }}
+            onImportExternalDeck={handleSavePresentationToPlatform}
             onEditPresentation={(deck) => {
               setEditingPresentation(deck);
               setStage('presentation_studio');
             }}
             onDeletePresentation={handleDeleteSavedPresentation}
+            initialOpenExternalModal={openExternalPptxModal}
+            onClearInitialOpenExternalModal={() => setOpenExternalPptxModal(false)}
             onBack={handleResetToStudents}
           />
         )}

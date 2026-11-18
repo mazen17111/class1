@@ -293,6 +293,16 @@ export async function updateCertificateThemeInFirestore(
   }
 }
 
+export async function deleteCertificateFromFirestore(certId: string): Promise<void> {
+  const id = sanitizeDocId(certId);
+  const path = `certificates/${id}`;
+  try {
+    await deleteDoc(doc(db, 'certificates', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
 // =========================================================================
 // CUSTOM WORDS & IMAGES (Direct Firestore Collection)
 // =========================================================================
@@ -804,6 +814,7 @@ async function sanitizeSlideForFirestore(slide: PresentationSlide): Promise<Reco
     if (slide.columnsOverride !== undefined) out.columnsOverride = slide.columnsOverride;
     if (slide.fontScale !== undefined) out.fontScale = slide.fontScale;
     if (slide.swapPositions !== undefined) out.swapPositions = slide.swapPositions;
+    if (slide.fullBleedImage !== undefined) out.fullBleedImage = Boolean(slide.fullBleedImage);
 
     return out;
   };
@@ -841,6 +852,9 @@ export function subscribePresentations(
           slideCount: Math.max(1, Number(d.slideCount ?? 1)),
           transitionEnabled: Boolean(d.transitionEnabled),
           transitionType: (d.transitionType || 'none') as SlideTransitionType,
+          isExternal: d.isExternal ? true : undefined,
+          externalType: d.externalType || undefined,
+          externalUrl: typeof d.externalUrl === 'string' ? d.externalUrl : undefined,
           createdAtMs,
           updatedAtMs,
         });
@@ -912,25 +926,42 @@ export async function savePresentationToFirestore(
         ? 'slide'
         : 'none';
     const theme = sanitizeThemeForFirestore(presentation.theme);
+    const validExtTypes = ['pptx_file', 'pdf_slides', 'embed_url'];
+    const isExternal = Boolean(presentation.isExternal);
+    const externalType =
+      isExternal && presentation.externalType && validExtTypes.includes(presentation.externalType)
+        ? presentation.externalType
+        : undefined;
+    const externalUrl =
+      isExternal && presentation.externalUrl
+        ? clampString(presentation.externalUrl, 2000, '')
+        : undefined;
 
     await runTransaction(db, async (tx) => {
       const existingSnap = await tx.get(ref);
+      const baseDoc: Record<string, unknown> = {
+        id,
+        title,
+        letterId,
+        letterChar,
+        letterName,
+        slideCount,
+        transitionEnabled,
+        transitionType,
+        theme,
+        updatedAt: serverTimestamp(),
+      };
+      if (isExternal) {
+        baseDoc.isExternal = true;
+        if (externalType) baseDoc.externalType = externalType;
+        if (externalUrl) baseDoc.externalUrl = externalUrl;
+      }
+
       if (!existingSnap.exists()) {
-        tx.set(ref, {
-          id,
-          title,
-          letterId,
-          letterChar,
-          letterName,
-          slideCount,
-          transitionEnabled,
-          transitionType,
-          theme,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+        baseDoc.createdAt = serverTimestamp();
+        tx.set(ref, baseDoc);
       } else {
-        tx.update(ref, {
+        const updatePayload: Record<string, unknown> = {
           title,
           letterId,
           letterChar,
@@ -940,7 +971,13 @@ export async function savePresentationToFirestore(
           transitionType,
           theme,
           updatedAt: serverTimestamp(),
-        });
+        };
+        if (isExternal) {
+          updatePayload.isExternal = true;
+          if (externalType) updatePayload.externalType = externalType;
+          if (externalUrl) updatePayload.externalUrl = externalUrl;
+        }
+        tx.update(ref, updatePayload);
       }
     });
 

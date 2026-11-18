@@ -314,6 +314,23 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
     </div>
   );
 
+  if (slide.fullBleedImage && hasUploadedImages && slide.uploadedImages) {
+    const heroImg = slide.uploadedImages[0];
+    return (
+      <div
+        dir="rtl"
+        className="relative w-[1280px] h-[720px] overflow-hidden bg-white select-none flex items-center justify-center"
+      >
+        <img
+          src={heroImg.dataUrl}
+          alt={slide.title || 'شريحة'}
+          referrerPolicy="no-referrer"
+          className="w-full h-full object-contain bg-white"
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       dir="rtl"
@@ -656,7 +673,19 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
 
         {/* 3. GALLERY / VOCABULARY / UPLOADED TEACHER IMAGES */}
         {!isCover && !isClosing && isGallery && (
-          <div className="w-full">
+          <div className="w-full space-y-3">
+            {slide.bodyText && (
+              <div
+                className={`px-5 py-3 rounded-2xl border text-lg font-bold leading-relaxed whitespace-pre-line max-h-40 overflow-hidden ${alignClass}`}
+                style={{
+                  backgroundColor: theme.surfaceHex,
+                  borderColor: theme.borderHex,
+                  color: theme.textHex,
+                }}
+              >
+                {slide.bodyText}
+              </div>
+            )}
             {hasUploadedImages ? (
               (() => {
                 const imgs = slide.uploadedImages!;

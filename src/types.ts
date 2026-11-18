@@ -106,6 +106,8 @@ export type SlideTransitionType =
   | 'curtain'
   | 'cube';
 
+export type ExternalPresentationType = 'pptx_file' | 'pdf_slides' | 'embed_url';
+
 export interface SavedPresentation {
   id: string;
   title: string;
@@ -117,6 +119,9 @@ export interface SavedPresentation {
   slideCount: number;
   transitionEnabled: boolean;
   transitionType: SlideTransitionType;
+  isExternal?: boolean;
+  externalType?: ExternalPresentationType;
+  externalUrl?: string;
   createdAtMs: number;
   updatedAtMs: number;
 }
@@ -217,4 +222,5 @@ export interface PresentationSlide {
   columnsOverride?: 1 | 2 | 3 | 4;
   fontScale?: 'sm' | 'md' | 'lg';
   swapPositions?: boolean;
+  fullBleedImage?: boolean;
 }
