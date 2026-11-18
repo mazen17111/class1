@@ -15,7 +15,17 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
-import { BrandSettings, IssuedCertificate, Student, WordItem } from './types';
+import {
+  BrandSettings,
+  DeckTheme,
+  IssuedCertificate,
+  PresentationSlide,
+  SavedPresentation,
+  SlideTransitionType,
+  Student,
+  StudyMaterial,
+  WordItem,
+} from './types';
 
 // Initialize Firebase App & Enterprise Named Firestore Database (direct access, no login required)
 const app = initializeApp(firebaseConfig);
@@ -494,3 +504,561 @@ export function syncLocalDataToFirestore(
 
   return initialSyncPromise;
 }
+
+// =========================================================================
+// STUDY MATERIALS & PER-PAGE ANNOTATIONS (Direct Firestore Collection)
+// =========================================================================
+
+export function subscribeStudyMaterials(
+  onData: (materials: StudyMaterial[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  const path = 'studyMaterials';
+  return onSnapshot(
+    collection(db, path),
+    (snapshot) => {
+      const list: StudyMaterial[] = [];
+      snapshot.forEach((docSnap) => {
+        const d = docSnap.data();
+        const createdAtMs =
+          d.createdAt instanceof Timestamp ? d.createdAt.toMillis() : Date.now();
+        const updatedAtMs =
+          d.updatedAt instanceof Timestamp ? d.updatedAt.toMillis() : createdAtMs;
+        list.push({
+          id: String(d.id || docSnap.id),
+          title: String(d.title || 'مادة دراسية'),
+          sourceType: d.sourceType || 'pdf_file',
+          fileUrl: String(d.fileUrl || ''),
+          inlineImage: typeof d.inlineImage === 'string' ? d.inlineImage : undefined,
+          pageCount: Math.max(1, Number(d.pageCount ?? 1)),
+          lastPage: Math.max(1, Number(d.lastPage ?? 1)),
+          createdAtMs,
+          updatedAtMs,
+        });
+      });
+      list.sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+      onData(list);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch (wrapped) {
+        if (onError && wrapped instanceof Error) onError(wrapped);
+      }
+    }
+  );
+}
+
+export async function saveStudyMaterialToFirestore(material: StudyMaterial): Promise<void> {
+  const id = sanitizeDocId(material.id);
+  const path = `studyMaterials/${id}`;
+  const ref = doc(db, 'studyMaterials', id);
+
+  try {
+    const title = clampString(material.title, 140, 'مادة دراسية');
+    const fileUrl = clampString(material.fileUrl, 2000, '');
+    const pageCount = Math.max(1, Math.min(2000, Math.round(material.pageCount || 1)));
+    const lastPage = Math.max(1, Math.min(2000, Math.round(material.lastPage || 1)));
+    const inlineImage =
+      material.inlineImage && material.inlineImage.length <= 490000
+        ? material.inlineImage
+        : undefined;
+
+    await runTransaction(db, async (tx) => {
+      const existingSnap = await tx.get(ref);
+      if (!existingSnap.exists()) {
+        const payload: Record<string, unknown> = {
+          id,
+          title,
+          sourceType: material.sourceType,
+          fileUrl,
+          pageCount,
+          lastPage,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+        if (inlineImage) {
+          payload.inlineImage = inlineImage;
+        }
+        tx.set(ref, payload);
+      } else {
+        tx.update(ref, {
+          title,
+          pageCount,
+          lastPage,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function updateStudyMaterialProgressInFirestore(
+  materialId: string,
+  patch: { lastPage?: number; pageCount?: number; title?: string }
+): Promise<void> {
+  const id = sanitizeDocId(materialId);
+  const path = `studyMaterials/${id}`;
+  const ref = doc(db, 'studyMaterials', id);
+
+  try {
+    const payload: Record<string, unknown> = {
+      updatedAt: serverTimestamp(),
+    };
+    if (patch.lastPage !== undefined) {
+      payload.lastPage = Math.max(1, Math.min(2000, Math.round(patch.lastPage)));
+    }
+    if (patch.pageCount !== undefined) {
+      payload.pageCount = Math.max(1, Math.min(2000, Math.round(patch.pageCount)));
+    }
+    if (patch.title !== undefined) {
+      payload.title = clampString(patch.title, 140, 'مادة دراسية');
+    }
+    await updateDoc(ref, payload);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteStudyMaterialFromFirestore(materialId: string): Promise<void> {
+  const id = sanitizeDocId(materialId);
+  const path = `studyMaterials/${id}`;
+  try {
+    const annSnap = await getDocs(collection(db, 'studyMaterials', id, 'annotations'));
+    for (const d of annSnap.docs) {
+      await deleteDoc(doc(db, 'studyMaterials', id, 'annotations', d.id));
+    }
+    await deleteDoc(doc(db, 'studyMaterials', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function fetchMaterialAnnotationsFromFirestore(
+  materialId: string
+): Promise<Record<number, string>> {
+  const id = sanitizeDocId(materialId);
+  const path = `studyMaterials/${id}/annotations`;
+  try {
+    const snap = await getDocs(collection(db, 'studyMaterials', id, 'annotations'));
+    const map: Record<number, string> = {};
+    snap.forEach((docSnap) => {
+      const d = docSnap.data();
+      const pageNum = Number(d.pageNumber ?? 0);
+      const imageData = typeof d.imageData === 'string' ? d.imageData : '';
+      if (pageNum >= 1 && imageData) {
+        map[pageNum] = imageData;
+      }
+    });
+    return map;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function saveMaterialAnnotationToFirestore(
+  materialId: string,
+  pageNumber: number,
+  imageData: string
+): Promise<void> {
+  const id = sanitizeDocId(materialId);
+  const cleanPage = Math.max(1, Math.min(2000, Math.round(pageNumber)));
+  const pageKey = `p_${cleanPage}`;
+  const path = `studyMaterials/${id}/annotations/${pageKey}`;
+  const ref = doc(db, 'studyMaterials', id, 'annotations', pageKey);
+
+  // Enforce 500KB limit from firestore.rules
+  if (imageData.length > 490000) {
+    return;
+  }
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const existingSnap = await tx.get(ref);
+      if (!existingSnap.exists()) {
+        tx.set(ref, {
+          id: pageKey,
+          materialId: id,
+          pageNumber: cleanPage,
+          imageData,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        tx.update(ref, {
+          imageData,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+// =========================================================================
+// SAVED POWERPOINT PRESENTATIONS, SLIDES & EXPLAINER ANNOTATIONS
+// =========================================================================
+
+async function compressDataUrlForFirestore(dataUrl: string, maxDim = 720): Promise<string> {
+  if (!dataUrl.startsWith('data:image/') || dataUrl.length < 140000) return dataUrl;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width || maxDim;
+      let h = img.height || maxDim;
+      if (w > maxDim || h > maxDim) {
+        const ratio = Math.min(maxDim / w, maxDim / h);
+        w = Math.max(1, Math.round(w * ratio));
+        h = Math.max(1, Math.round(h * ratio));
+      }
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const ctx = c.getContext('2d');
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      let out = c.toDataURL('image/jpeg', 0.8);
+      if (out.length > 220000) {
+        out = c.toDataURL('image/jpeg', 0.62);
+      }
+      resolve(out);
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+function sanitizeThemeForFirestore(theme: DeckTheme): Record<string, string> {
+  return {
+    id: clampString(theme.id, 40, 'sand'),
+    name: clampString(theme.name, 80, 'تصميم أنيق'),
+    primaryHex: clampString(theme.primaryHex, 20, '#F97316'),
+    secondaryHex: clampString(theme.secondaryHex, 20, '#EA580C'),
+    accentHex: clampString(theme.accentHex, 20, '#0EA5E9'),
+    bgHex: clampString(theme.bgHex, 20, '#FFFFFF'),
+    surfaceHex: clampString(theme.surfaceHex, 20, '#F8FAFC'),
+    borderHex: clampString(theme.borderHex, 20, '#E2E8F0'),
+    textHex: clampString(theme.textHex, 20, '#0F172A'),
+    mutedTextHex: clampString(theme.mutedTextHex, 20, '#64748B'),
+    patternType: (['waves', 'geometric', 'diagonal', 'arches', 'ribbons', 'dots'].includes(
+      theme.patternType
+    )
+      ? theme.patternType
+      : 'waves') as DeckTheme['patternType'],
+  };
+}
+
+async function sanitizeSlideForFirestore(slide: PresentationSlide): Promise<Record<string, unknown>> {
+  const buildPayload = async (maxDim: number, forceTight = false) => {
+    const safeItems = await Promise.all(
+      (slide.items || []).slice(0, 50).map(async (it) => {
+        const obj: Record<string, unknown> = {
+          id: clampString(it.id, 128, `it_${Date.now()}`),
+          label: clampString(it.label, 200, ''),
+          value: clampString(it.value, 200, ''),
+        };
+        if (it.subtext !== undefined) obj.subtext = clampString(it.subtext, 300, '');
+        if (it.image) {
+          obj.image = forceTight
+            ? await compressDataUrlForFirestore(it.image, maxDim)
+            : await compressDataUrlForFirestore(it.image, 620);
+        }
+        return obj;
+      })
+    );
+
+    const safeUploaded = slide.uploadedImages
+      ? await Promise.all(
+          slide.uploadedImages.slice(0, 30).map(async (im) => ({
+            id: clampString(im.id, 128, `im_${Date.now()}`),
+            dataUrl: await compressDataUrlForFirestore(im.dataUrl, forceTight ? maxDim : 680),
+            caption: clampString(im.caption, 200, ''),
+          }))
+        )
+      : undefined;
+
+    const out: Record<string, unknown> = {
+      id: clampString(slide.id, 128, `slide_${Date.now()}`),
+      kind: slide.kind,
+      layoutVariant: slide.layoutVariant,
+      title: clampString(slide.title, 300, 'شريحة'),
+      subtitle: clampString(slide.subtitle, 500, ''),
+      items: safeItems,
+      teacherNote: clampString(slide.teacherNote, 200, ''),
+    };
+
+    if (slide.badgeText !== undefined) out.badgeText = clampString(slide.badgeText, 120, '');
+    if (slide.highlightLetter !== undefined)
+      out.highlightLetter = clampString(slide.highlightLetter, 20, '');
+    if (slide.bodyText !== undefined) out.bodyText = clampString(slide.bodyText, 4000, '');
+    if (safeUploaded && safeUploaded.length > 0) out.uploadedImages = safeUploaded;
+    if (slide.textAlign !== undefined) out.textAlign = slide.textAlign;
+    if (slide.headerLetterSide !== undefined) out.headerLetterSide = slide.headerLetterSide;
+    if (slide.columnsOverride !== undefined) out.columnsOverride = slide.columnsOverride;
+    if (slide.fontScale !== undefined) out.fontScale = slide.fontScale;
+    if (slide.swapPositions !== undefined) out.swapPositions = slide.swapPositions;
+
+    return out;
+  };
+
+  let out = await buildPayload(620, false);
+  if (JSON.stringify(out).length > 780000) {
+    out = await buildPayload(360, true);
+  }
+  return out;
+}
+
+export function subscribePresentations(
+  onData: (presentations: SavedPresentation[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  const path = 'presentations';
+  return onSnapshot(
+    collection(db, path),
+    (snapshot) => {
+      const list: SavedPresentation[] = [];
+      snapshot.forEach((docSnap) => {
+        const d = docSnap.data();
+        const createdAtMs =
+          d.createdAt instanceof Timestamp ? d.createdAt.toMillis() : Date.now();
+        const updatedAtMs =
+          d.updatedAt instanceof Timestamp ? d.updatedAt.toMillis() : createdAtMs;
+        list.push({
+          id: String(d.id || docSnap.id),
+          title: String(d.title || 'عرض تقديمي'),
+          letterId: String(d.letterId || 'alif'),
+          letterChar: String(d.letterChar || 'أ'),
+          letterName: String(d.letterName || 'الألف'),
+          theme: (d.theme || {}) as DeckTheme,
+          slides: [],
+          slideCount: Math.max(1, Number(d.slideCount ?? 1)),
+          transitionEnabled: Boolean(d.transitionEnabled),
+          transitionType: (d.transitionType || 'none') as SlideTransitionType,
+          createdAtMs,
+          updatedAtMs,
+        });
+      });
+      list.sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+      onData(list);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch (wrapped) {
+        if (onError && wrapped instanceof Error) onError(wrapped);
+      }
+    }
+  );
+}
+
+export async function fetchPresentationSlidesFromFirestore(
+  presentationId: string
+): Promise<PresentationSlide[]> {
+  const id = sanitizeDocId(presentationId);
+  const path = `presentations/${id}/slides`;
+  try {
+    const snap = await getDocs(collection(db, 'presentations', id, 'slides'));
+    const rows: { index: number; slide: PresentationSlide }[] = [];
+    snap.forEach((docSnap) => {
+      const d = docSnap.data();
+      if (d.slideData) {
+        rows.push({
+          index: Number(d.slideIndex ?? 0),
+          slide: d.slideData as PresentationSlide,
+        });
+      }
+    });
+    rows.sort((a, b) => a.index - b.index);
+    return rows.map((r) => r.slide);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function savePresentationToFirestore(
+  presentation: SavedPresentation
+): Promise<void> {
+  const id = sanitizeDocId(presentation.id);
+  const path = `presentations/${id}`;
+  const ref = doc(db, 'presentations', id);
+
+  try {
+    const title = clampString(presentation.title, 160, 'عرض تقديمي');
+    const letterId = clampString(presentation.letterId, 40, 'alif');
+    const letterChar = clampString(presentation.letterChar, 10, 'أ');
+    const letterName = clampString(presentation.letterName, 40, 'الألف');
+    const slideCount = Math.max(1, Math.min(100, presentation.slides.length));
+    const transitionEnabled = Boolean(presentation.transitionEnabled);
+    const validTypes: SlideTransitionType[] = [
+      'none',
+      'fade',
+      'slide',
+      'zoom',
+      'flip',
+      'curtain',
+      'cube',
+    ];
+    const transitionType: SlideTransitionType =
+      transitionEnabled && validTypes.includes(presentation.transitionType)
+        ? presentation.transitionType
+        : transitionEnabled
+        ? 'slide'
+        : 'none';
+    const theme = sanitizeThemeForFirestore(presentation.theme);
+
+    await runTransaction(db, async (tx) => {
+      const existingSnap = await tx.get(ref);
+      if (!existingSnap.exists()) {
+        tx.set(ref, {
+          id,
+          title,
+          letterId,
+          letterChar,
+          letterName,
+          slideCount,
+          transitionEnabled,
+          transitionType,
+          theme,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        tx.update(ref, {
+          title,
+          letterId,
+          letterChar,
+          letterName,
+          slideCount,
+          transitionEnabled,
+          transitionType,
+          theme,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    });
+
+    // Save each slide in ordered subcollection docs s_0..s_{N-1}
+    const existingSlidesSnap = await getDocs(collection(db, 'presentations', id, 'slides'));
+    const keepKeys = new Set<string>();
+
+    for (let i = 0; i < Math.min(100, presentation.slides.length); i++) {
+      const slideKey = `s_${i}`;
+      keepKeys.add(slideKey);
+      const slideRef = doc(db, 'presentations', id, 'slides', slideKey);
+      const safeSlideData = await sanitizeSlideForFirestore(presentation.slides[i]);
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(slideRef);
+        if (!snap.exists()) {
+          tx.set(slideRef, {
+            id: slideKey,
+            presentationId: id,
+            slideIndex: i,
+            slideData: safeSlideData,
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          tx.update(slideRef, {
+            slideIndex: i,
+            slideData: safeSlideData,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      });
+    }
+
+    // Remove stale trailing slides if presentation shrunk
+    for (const d of existingSlidesSnap.docs) {
+      if (!keepKeys.has(d.id)) {
+        await deleteDoc(doc(db, 'presentations', id, 'slides', d.id));
+      }
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deletePresentationFromFirestore(presentationId: string): Promise<void> {
+  const id = sanitizeDocId(presentationId);
+  const path = `presentations/${id}`;
+  try {
+    const [slidesSnap, annsSnap] = await Promise.all([
+      getDocs(collection(db, 'presentations', id, 'slides')),
+      getDocs(collection(db, 'presentations', id, 'annotations')),
+    ]);
+    for (const d of slidesSnap.docs) {
+      await deleteDoc(doc(db, 'presentations', id, 'slides', d.id));
+    }
+    for (const d of annsSnap.docs) {
+      await deleteDoc(doc(db, 'presentations', id, 'annotations', d.id));
+    }
+    await deleteDoc(doc(db, 'presentations', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function fetchPresentationAnnotationsFromFirestore(
+  presentationId: string
+): Promise<Record<number, string>> {
+  const id = sanitizeDocId(presentationId);
+  const path = `presentations/${id}/annotations`;
+  try {
+    const snap = await getDocs(collection(db, 'presentations', id, 'annotations'));
+    const map: Record<number, string> = {};
+    snap.forEach((docSnap) => {
+      const d = docSnap.data();
+      const idx = Number(d.slideIndex ?? -1);
+      const imageData = typeof d.imageData === 'string' ? d.imageData : '';
+      if (idx >= 0 && imageData) {
+        map[idx] = imageData;
+      }
+    });
+    return map;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function savePresentationAnnotationToFirestore(
+  presentationId: string,
+  slideIndex: number,
+  imageData: string
+): Promise<void> {
+  const id = sanitizeDocId(presentationId);
+  const cleanIdx = Math.max(0, Math.min(100, Math.round(slideIndex)));
+  const annKey = `a_${cleanIdx}`;
+  const path = `presentations/${id}/annotations/${annKey}`;
+  const ref = doc(db, 'presentations', id, 'annotations', annKey);
+
+  if (imageData.length > 490000) return;
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) {
+        tx.set(ref, {
+          id: annKey,
+          presentationId: id,
+          slideIndex: cleanIdx,
+          imageData,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        tx.update(ref, {
+          imageData,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+

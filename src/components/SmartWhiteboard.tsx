@@ -15,11 +15,16 @@ import {
   Square,
   Monitor,
   Check,
+  BookOpen,
 } from 'lucide-react';
 import { sound } from '../utils/audio';
 
 interface SmartWhiteboardProps {
   onBack: () => void;
+  initialDrawingDataUrl?: string | null;
+  onSaveDrawingDataUrl?: (dataUrl: string | null) => void;
+  onSwitchToBook?: () => void;
+  activeBookTitle?: string;
 }
 
 type ToolId = 'pen1' | 'pen2' | 'pen3' | 'highlighter' | 'laser' | 'eraser';
@@ -100,7 +105,13 @@ const SIZE_RANGES: Record<ToolId, { min: number; max: number }> = {
 
 const LASER_LIFETIME_MS = 1200;
 
-export const SmartWhiteboard: React.FC<SmartWhiteboardProps> = ({ onBack }) => {
+export const SmartWhiteboard: React.FC<SmartWhiteboardProps> = ({
+  onBack,
+  initialDrawingDataUrl,
+  onSaveDrawingDataUrl,
+  onSwitchToBook,
+  activeBookTitle,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const drawCanvasRef = useRef<HTMLCanvasElement>(null);
   const drawCtxRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -153,6 +164,17 @@ export const SmartWhiteboard: React.FC<SmartWhiteboardProps> = ({ onBack }) => {
     );
   }, []);
 
+  const persistBoardCanvas = useCallback(() => {
+    if (!onSaveDrawingDataUrl) return;
+    const canvas = drawCanvasRef.current;
+    if (!canvas || canvas.width === 0 || canvas.height === 0) return;
+    try {
+      onSaveDrawingDataUrl(canvas.toDataURL('image/png'));
+    } catch {
+      // ignore
+    }
+  }, [onSaveDrawingDataUrl]);
+
   const pushSnapshot = useCallback(() => {
     const canvas = drawCanvasRef.current;
     if (!canvas || canvas.width === 0 || canvas.height === 0) return;
@@ -172,17 +194,21 @@ export const SmartWhiteboard: React.FC<SmartWhiteboardProps> = ({ onBack }) => {
     historyRef.current = nextHistory;
     historyIndexRef.current = nextHistory.length - 1;
     syncHistoryFlags();
-  }, [syncHistoryFlags]);
+    persistBoardCanvas();
+  }, [syncHistoryFlags, persistBoardCanvas]);
 
-  // Setup canvases & responsive ResizeObserver
+  const restoredInitialRef = useRef(false);
+  const initialDrawingRef = useRef(initialDrawingDataUrl);
+
+  // Setup canvases & responsive ResizeObserver (standard composited 2D context — avoids Chromium desynchronized black-canvas glitch)
   useEffect(() => {
     const container = containerRef.current;
     const drawCanvas = drawCanvasRef.current;
     const laserCanvas = laserCanvasRef.current;
     if (!container || !drawCanvas || !laserCanvas) return;
 
-    drawCtxRef.current = drawCanvas.getContext('2d', { desynchronized: true });
-    laserCtxRef.current = laserCanvas.getContext('2d', { desynchronized: true });
+    drawCtxRef.current = drawCanvas.getContext('2d', { alpha: true });
+    laserCtxRef.current = laserCanvas.getContext('2d', { alpha: true });
 
     const resizeCanvases = () => {
       const rect = container.getBoundingClientRect();
@@ -213,7 +239,8 @@ export const SmartWhiteboard: React.FC<SmartWhiteboardProps> = ({ onBack }) => {
       const dCtx = drawCtxRef.current;
       if (dCtx) {
         dCtx.setTransform(1, 0, 0, 1, 0, 0);
-        if (tempCanvas) {
+        dCtx.clearRect(0, 0, targetW, targetH);
+        if (tempCanvas && restoredInitialRef.current) {
           dCtx.drawImage(tempCanvas, 0, 0, targetW, targetH);
         }
         dCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -221,10 +248,28 @@ export const SmartWhiteboard: React.FC<SmartWhiteboardProps> = ({ onBack }) => {
 
       const lCtx = laserCtxRef.current;
       if (lCtx) {
+        lCtx.setTransform(1, 0, 0, 1, 0, 0);
+        lCtx.clearRect(0, 0, targetW, targetH);
         lCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
 
-      if (historyRef.current.length === 0) {
+      if (!restoredInitialRef.current) {
+        restoredInitialRef.current = true;
+        const initialUrl = initialDrawingRef.current;
+        if (initialUrl && dCtx) {
+          const img = new Image();
+          img.onload = () => {
+            dCtx.setTransform(1, 0, 0, 1, 0, 0);
+            dCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            dCtx.drawImage(img, 0, 0, drawCanvas.width, drawCanvas.height);
+            dCtx.setTransform(dprRef.current, 0, 0, dprRef.current, 0, 0);
+            pushSnapshot();
+          };
+          img.src = initialUrl;
+        } else {
+          pushSnapshot();
+        }
+      } else if (historyRef.current.length === 0) {
         pushSnapshot();
       }
     };
@@ -482,6 +527,7 @@ export const SmartWhiteboard: React.FC<SmartWhiteboardProps> = ({ onBack }) => {
     ctx.drawImage(snap, 0, 0);
     ctx.setTransform(dprRef.current, 0, 0, dprRef.current, 0, 0);
     syncHistoryFlags();
+    persistBoardCanvas();
   };
 
   const handleRedo = () => {
@@ -500,6 +546,7 @@ export const SmartWhiteboard: React.FC<SmartWhiteboardProps> = ({ onBack }) => {
     ctx.drawImage(snap, 0, 0);
     ctx.setTransform(dprRef.current, 0, 0, dprRef.current, 0, 0);
     syncHistoryFlags();
+    persistBoardCanvas();
   };
 
   const handleClearBoard = () => {
@@ -614,11 +661,12 @@ export const SmartWhiteboard: React.FC<SmartWhiteboardProps> = ({ onBack }) => {
     <div className="max-w-7xl mx-auto px-3 sm:px-5 py-4 sm:py-5" dir="rtl">
       {/* Studio Header Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <button
             id="btn-whiteboard-back"
             onClick={() => {
               sound.playClick();
+              persistBoardCanvas();
               onBack();
             }}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 font-black text-sm border border-slate-200 shadow-xs active:scale-95 transition-all"
@@ -626,6 +674,23 @@ export const SmartWhiteboard: React.FC<SmartWhiteboardProps> = ({ onBack }) => {
             <ArrowRight className="w-4 h-4" />
             <span>العودة للمنصة</span>
           </button>
+
+          {onSwitchToBook && (
+            <button
+              id="btn-switch-whiteboard-to-book"
+              type="button"
+              onClick={() => {
+                sound.playClick();
+                persistBoardCanvas();
+                onSwitchToBook();
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-black text-sm shadow-sm active:scale-95 transition-all"
+              title={activeBookTitle ? `العودة إلى: ${activeBookTitle}` : 'العودة للكتاب / المواد الدراسية'}
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>{activeBookTitle ? 'العودة للكتاب' : 'المواد الدراسية'}</span>
+            </button>
+          )}
 
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-800 to-slate-950 text-amber-400 flex items-center justify-center shadow-md">
@@ -998,8 +1063,8 @@ export const SmartWhiteboard: React.FC<SmartWhiteboardProps> = ({ onBack }) => {
 
         <div
           ref={containerRef}
-          style={boardBackgroundStyle}
-          className={`relative w-full h-[62vh] min-h-[430px] max-h-[760px] rounded-2xl overflow-hidden border-2 border-slate-400/80 shadow-inner select-none ${
+          style={{ ...boardBackgroundStyle, isolation: 'isolate' }}
+          className={`relative w-full h-[62vh] min-h-[430px] max-h-[760px] bg-white rounded-2xl overflow-hidden border-2 border-slate-400/80 shadow-inner select-none ${
             activeTool === 'eraser' ? 'cursor-none' : 'cursor-crosshair'
           }`}
         >
@@ -1010,7 +1075,7 @@ export const SmartWhiteboard: React.FC<SmartWhiteboardProps> = ({ onBack }) => {
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
             onPointerLeave={handlePointerLeave}
-            style={{ touchAction: 'none', willChange: 'contents' }}
+            style={{ touchAction: 'none', backgroundColor: 'transparent' }}
             className="absolute inset-0 w-full h-full z-10"
           />
 

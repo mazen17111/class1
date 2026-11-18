@@ -25,12 +25,19 @@ import {
   Type,
   Layers,
   X,
+  Wand2,
+  Save,
+  Check,
+  Play,
+  FolderOpen,
 } from 'lucide-react';
 import {
   ArabicLetter,
   DeckTheme,
   PresentationSlide,
+  SavedPresentation,
   SlideLayoutVariant,
+  SlideTransitionType,
   UploadedTeacherImage,
   WordItem,
 } from '../types';
@@ -40,12 +47,21 @@ import {
   generateLetterPresentationDeck,
 } from '../utils/deckGenerator';
 import { ensurePngDataUrl, exportToPdf, exportToPptx } from '../utils/deckExporter';
+import {
+  SLIDE_TRANSITION_OPTIONS,
+  getTransitionClassName,
+  getTransitionLabel,
+} from '../utils/slideTransitions';
 import { SlideRenderer } from './SlideRenderer';
 import { sound } from '../utils/audio';
 
 interface PresentationStudioProps {
   words: WordItem[];
   onBackToPlatform: () => void;
+  onSaveToPlatform?: (deck: SavedPresentation) => Promise<void>;
+  onOpenPresentationsLibrary?: () => void;
+  editingPresentation?: SavedPresentation | null;
+  onClearEditingPresentation?: () => void;
 }
 
 type StudioStep = 'setup' | 'generating' | 'editor';
@@ -53,6 +69,10 @@ type StudioStep = 'setup' | 'generating' | 'editor';
 export const PresentationStudio: React.FC<PresentationStudioProps> = ({
   words,
   onBackToPlatform,
+  onSaveToPlatform,
+  onOpenPresentationsLibrary,
+  editingPresentation,
+  onClearEditingPresentation,
 }) => {
   const [step, setStep] = useState<StudioStep>('setup');
 
@@ -74,6 +94,19 @@ export const PresentationStudio: React.FC<PresentationStudioProps> = ({
   const [slides, setSlides] = useState<PresentationSlide[]>([]);
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
   const [generationCount, setGenerationCount] = useState(0);
+
+  // Slide Transition & Save-to-Platform state
+  const [savedPresentationId, setSavedPresentationId] = useState<string | null>(null);
+  const [presentationTitle, setPresentationTitle] = useState('');
+  const [transitionEnabled, setTransitionEnabled] = useState<boolean>(false);
+  const [transitionType, setTransitionType] = useState<SlideTransitionType>('slide');
+  const [showTransitionModal, setShowTransitionModal] = useState(false);
+  const [transitionPreviewSeq, setTransitionPreviewSeq] = useState(0);
+  const [previewDir, setPreviewDir] = useState<'next' | 'prev'>('next');
+  const [modalDemoSeq, setModalDemoSeq] = useState(0);
+  const [showSavePlatformModal, setShowSavePlatformModal] = useState(false);
+  const [isSavingPlatform, setIsSavingPlatform] = useState(false);
+  const [platformSavedMsg, setPlatformSavedMsg] = useState('');
 
   // Export state
   const [exportStatus, setExportStatus] = useState<{
@@ -98,6 +131,24 @@ export const PresentationStudio: React.FC<PresentationStudioProps> = ({
   const exportSlideRefs = useRef<(HTMLDivElement | null)[]>([]);
   const setupFileInputRef = useRef<HTMLInputElement>(null);
   const slideFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Hydrate if editing a saved presentation from "العروض التقديمية"
+  useEffect(() => {
+    if (!editingPresentation) return;
+    const foundLetter =
+      ARABIC_LETTERS.find((l) => l.id === editingPresentation.letterId) || ARABIC_LETTERS[0];
+    setSelectedLetter(foundLetter);
+    setSavedPresentationId(editingPresentation.id);
+    setPresentationTitle(editingPresentation.title);
+    setTheme(editingPresentation.theme);
+    setSlides(editingPresentation.slides);
+    setTransitionEnabled(Boolean(editingPresentation.transitionEnabled));
+    setTransitionType(editingPresentation.transitionType || 'slide');
+    setActiveSlideIndex(0);
+    setPlatformSavedMsg('');
+    setStep('editor');
+    onClearEditingPresentation?.();
+  }, [editingPresentation, onClearEditingPresentation]);
 
   useEffect(() => {
     const updateScale = () => {
@@ -247,6 +298,9 @@ export const PresentationStudio: React.FC<PresentationStudioProps> = ({
     setSlides(normalizedSlides);
     setGenerationCount(deck.generationNumber);
     setActiveSlideIndex(0);
+    setSavedPresentationId(null);
+    setPresentationTitle(`درس حرف ${selectedLetter.char} (${selectedLetter.name})`);
+    setPlatformSavedMsg('');
     setExportStatus({ type: null, progress: 0, message: '', doneMessage: '', error: '' });
 
     await new Promise(r => setTimeout(r, 250));
@@ -282,6 +336,54 @@ export const PresentationStudio: React.FC<PresentationStudioProps> = ({
     setSlides(normalizedSlides);
     setGenerationCount(deck.generationNumber);
     setActiveSlideIndex(0);
+    setPlatformSavedMsg('');
+  };
+
+  const handleConfirmSaveToPlatform = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!onSaveToPlatform || slides.length === 0) return;
+
+    setIsSavingPlatform(true);
+    setPlatformSavedMsg('');
+    try {
+      const now = Date.now();
+      const id = savedPresentationId || `ppt_${now}`;
+      const cleanTitle =
+        presentationTitle.trim().slice(0, 160) ||
+        `درس حرف ${selectedLetter.char} (${selectedLetter.name})`;
+
+      const deckToSave: SavedPresentation = {
+        id,
+        title: cleanTitle,
+        letterId: selectedLetter.id,
+        letterChar: selectedLetter.char,
+        letterName: selectedLetter.name,
+        theme,
+        slides,
+        slideCount: slides.length,
+        transitionEnabled,
+        transitionType: transitionEnabled ? transitionType : 'none',
+        createdAtMs: now,
+        updatedAtMs: now,
+      };
+
+      await onSaveToPlatform(deckToSave);
+      setSavedPresentationId(id);
+      setPresentationTitle(cleanTitle);
+      sound.playSuccess();
+      setShowSavePlatformModal(false);
+      setPlatformSavedMsg(
+        `تم حفظ «${cleanTitle}» في قسم العروض التقديمية بنجاح!`
+      );
+    } catch (err) {
+      console.error('Save presentation to platform failed:', err);
+      setExportStatus(prev => ({
+        ...prev,
+        error: 'تعذر حفظ العرض في المنصة، يرجى المحاولة مرة أخرى.',
+      }));
+    } finally {
+      setIsSavingPlatform(false);
+    }
   };
 
   const activeSlide = slides[activeSlideIndex];
@@ -862,19 +964,67 @@ export const PresentationStudio: React.FC<PresentationStudioProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5">
+              {/* Slide Transitions Picker Button */}
+              <button
+                id="btn-slide-transitions"
+                type="button"
+                onClick={() => {
+                  sound.playClick();
+                  setModalDemoSeq((n) => n + 1);
+                  setShowTransitionModal(true);
+                }}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-sm border transition-all whitespace-nowrap shrink-0 ${
+                  transitionEnabled && transitionType !== 'none'
+                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-700 shadow-sm'
+                    : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200'
+                }`}
+              >
+                <Wand2 className="w-4 h-4" />
+                <span>
+                  الانتقال بين الشرائح
+                  {transitionEnabled && transitionType !== 'none'
+                    ? ` (${getTransitionLabel(transitionType)})`
+                    : ''}
+                </span>
+              </button>
+
+              {/* Save Inside Platform ("حفظ في المنصة") */}
+              {onSaveToPlatform && (
+                <button
+                  id="btn-save-presentation-platform"
+                  type="button"
+                  disabled={isSavingPlatform}
+                  onClick={() => {
+                    sound.playClick();
+                    if (!presentationTitle.trim()) {
+                      setPresentationTitle(`درس حرف ${selectedLetter.char} (${selectedLetter.name})`);
+                    }
+                    setShowSavePlatformModal(true);
+                  }}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-black text-sm shadow-sm transition-all whitespace-nowrap shrink-0"
+                >
+                  {isSavingPlatform ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
+                  <span>حفظ في المنصة</span>
+                </button>
+              )}
+
               <button
                 id="btn-export-pptx"
                 type="button"
                 disabled={exportStatus.type !== null}
                 onClick={handleDownloadPptx}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white font-black text-sm shadow-sm transition-all whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white font-black text-sm shadow-sm transition-all whitespace-nowrap shrink-0"
               >
                 {exportStatus.type === 'pptx' ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Presentation className="w-4 h-4" />
                 )}
-                <span>حفظ كـ باوربوينت (PPTX)</span>
+                <span>تنزيل PPTX</span>
               </button>
 
               <button
@@ -882,17 +1032,40 @@ export const PresentationStudio: React.FC<PresentationStudioProps> = ({
                 type="button"
                 disabled={exportStatus.type !== null}
                 onClick={handleDownloadPdf}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white font-black text-sm shadow-sm transition-all whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white font-black text-sm shadow-sm transition-all whitespace-nowrap shrink-0"
               >
                 {exportStatus.type === 'pdf' ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <FileText className="w-4 h-4" />
                 )}
-                <span>حفظ كـ ملف PDF</span>
+                <span>تنزيل PDF</span>
               </button>
             </div>
           </div>
+
+          {/* PLATFORM SAVE FEEDBACK BANNER */}
+          {platformSavedMsg && (
+            <div className="px-5 py-3.5 rounded-2xl border bg-emerald-50 border-emerald-200 text-emerald-950 font-bold text-sm flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span>{platformSavedMsg}</span>
+              </div>
+              {onOpenPresentationsLibrary && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.playClick();
+                    onOpenPresentationsLibrary();
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs shadow-xs"
+                >
+                  <FolderOpen className="w-4 h-4" />
+                  <span>فتح العروض التقديمية للشرح</span>
+                </button>
+              )}
+            </div>
+          )}
 
           {/* EXPORT PROGRESS / FEEDBACK BANNER */}
           {(exportStatus.type || exportStatus.doneMessage || exportStatus.error) && (
@@ -961,7 +1134,9 @@ export const PresentationStudio: React.FC<PresentationStudioProps> = ({
                         key={s.id}
                         onClick={() => {
                           sound.playClick();
+                          setPreviewDir(idx >= activeSlideIndex ? 'next' : 'prev');
                           setActiveSlideIndex(idx);
+                          setTransitionPreviewSeq((n) => n + 1);
                         }}
                         className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-2 ${
                           isActive
@@ -1216,6 +1391,8 @@ export const PresentationStudio: React.FC<PresentationStudioProps> = ({
                   className="w-full aspect-video relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-100"
                 >
                   <div
+                    key={`editor-preview-${activeSlideIndex}-${transitionPreviewSeq}`}
+                    className={getTransitionClassName(transitionEnabled, transitionType, previewDir)}
                     style={{
                       width: 1280,
                       height: 720,
@@ -1517,6 +1694,243 @@ export const PresentationStudio: React.FC<PresentationStudioProps> = ({
               </div>
             ))}
           </div>
+          {/* MODAL: SLIDE TRANSITION SHAPE PICKER ("الانتقال بين الشرائح") */}
+          {showTransitionModal && (
+            <div className="fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
+                <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+                      <Wand2 className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900">
+                        الانتقال بين الشرائح
+                      </h3>
+                      <p className="text-xs font-bold text-slate-500 mt-0.5">
+                        اختر شكل الانتقال الذي تفضله ليظهر عند شرح الباوربوينت وتقليب الشرائح
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowTransitionModal(false)}
+                    className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-800"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Live Mini Preview Box of Chosen Transition */}
+                <div className="bg-slate-900 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 overflow-hidden">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-bold text-slate-400 mb-1">
+                      معاينة شكل الانتقال المختار:
+                    </div>
+                    <div className="text-base font-black text-white">
+                      {transitionEnabled && transitionType !== 'none'
+                        ? getTransitionLabel(transitionType)
+                        : 'بدون انتقال (عادي)'}
+                    </div>
+                  </div>
+                  <div
+                    key={`demo-${transitionEnabled}-${transitionType}-${modalDemoSeq}`}
+                    className={`w-48 h-24 rounded-xl flex items-center justify-center font-black text-white text-xl shadow-lg border-2 border-white/25 ${getTransitionClassName(
+                      transitionEnabled,
+                      transitionType,
+                      'next'
+                    )}`}
+                    style={{ backgroundColor: theme.primaryHex }}
+                  >
+                    <span>حرف {selectedLetter.char}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playClick();
+                      setModalDemoSeq((n) => n + 1);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shrink-0"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-slate-950" />
+                    <span>تجربة الحركة</span>
+                  </button>
+                </div>
+
+                {/* Enable / Disable Option + Transition Shape Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {SLIDE_TRANSITION_OPTIONS.map((opt) => {
+                    const isSelected = transitionEnabled && transitionType === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => {
+                          sound.playClick();
+                          setTransitionEnabled(true);
+                          setTransitionType(opt.id);
+                          setModalDemoSeq((n) => n + 1);
+                          setTransitionPreviewSeq((n) => n + 1);
+                        }}
+                        className={`p-4 rounded-2xl border-2 text-right transition-all flex items-start justify-between gap-3 ${
+                          isSelected
+                            ? 'bg-indigo-50 border-indigo-600 shadow-sm'
+                            : 'bg-slate-50 hover:bg-slate-100 border-slate-200'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-black text-sm text-slate-900 flex items-center gap-2">
+                            <span>{opt.label}</span>
+                            <span className="text-[11px] font-bold text-indigo-700">
+                              · {opt.previewHint}
+                            </span>
+                          </div>
+                          <p className="text-xs font-medium text-slate-600 mt-1">
+                            {opt.description}
+                          </p>
+                        </div>
+                        {isSelected && (
+                          <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                            <Check className="w-3.5 h-3.5" />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playClick();
+                      setTransitionEnabled(false);
+                      setTransitionType('none');
+                      setModalDemoSeq((n) => n + 1);
+                    }}
+                    className={`sm:col-span-2 p-3.5 rounded-2xl border-2 text-right transition-all flex items-center justify-between ${
+                      !transitionEnabled || transitionType === 'none'
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-black text-sm">بدون انتقال بين الشرائح (تقليب مباشر)</div>
+                      <div className="text-xs opacity-75">
+                        يتم الانتقال بين الشرائح مباشرة بدون مؤثرات حركية
+                      </div>
+                    </div>
+                    {(!transitionEnabled || transitionType === 'none') && (
+                      <Check className="w-5 h-5 text-amber-400 shrink-0" />
+                    )}
+                  </button>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playSuccess();
+                      setShowTransitionModal(false);
+                    }}
+                    className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm shadow-sm"
+                  >
+                    اعتماد شكل الانتقال
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL: SAVE PRESENTATION IN PLATFORM ("حفظ في المنصة") */}
+          {showSavePlatformModal && (
+            <div className="fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-xs flex items-center justify-center p-4">
+              <form
+                onSubmit={handleConfirmSaveToPlatform}
+                className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-5"
+              >
+                <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                      <Save className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900">
+                        حفظ العرض في المنصة
+                      </h3>
+                      <p className="text-xs font-bold text-slate-500">
+                        يُحفظ مباشرة داخل مستطيل «العروض التقديمية» للشرح في أي وقت
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowSavePlatformModal(false)}
+                    className="p-2 rounded-xl text-slate-400 hover:bg-slate-100"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-black text-slate-700 mb-1.5">
+                      اسم العرض التقديمي
+                    </label>
+                    <input
+                      id="input-presentation-platform-title"
+                      type="text"
+                      maxLength={160}
+                      required
+                      value={presentationTitle}
+                      onChange={(e) => setPresentationTitle(e.target.value)}
+                      placeholder={`درس حرف ${selectedLetter.char} (${selectedLetter.name})`}
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-emerald-500 focus:bg-white focus:outline-none text-sm font-black text-slate-900"
+                    />
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-600 space-y-1">
+                    <div>عدد الشرائح: {slides.length} شرائح</div>
+                    <div>
+                      الانتقال بين الشرائح:{' '}
+                      <span className="text-slate-900 font-black">
+                        {transitionEnabled && transitionType !== 'none'
+                          ? `مفعّل (${getTransitionLabel(transitionType)})`
+                          : 'غير مفعّل'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {exportStatus.error && (
+                    <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700">
+                      {exportStatus.error}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2.5 pt-2">
+                  <button
+                    id="btn-confirm-save-platform"
+                    type="submit"
+                    disabled={isSavingPlatform}
+                    className="flex-1 py-3 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-black text-sm shadow-sm flex items-center justify-center gap-2"
+                  >
+                    {isSavingPlatform ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    <span>{savedPresentationId ? 'تحديث العرض المحفوظ' : 'تأكيد الحفظ في المنصة'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSavePlatformModal(false)}
+                    className="px-4 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-sm"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
         </div>
       )}
     </div>

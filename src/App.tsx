@@ -10,8 +10,20 @@ import { PresentationStudio } from './components/PresentationStudio';
 import { SmartWhiteboard } from './components/SmartWhiteboard';
 import { IssuedCertificatesView } from './components/IssuedCertificatesView';
 import { AdminControlModal } from './components/AdminControlModal';
+import { StudyMaterialsStudio } from './components/StudyMaterialsStudio';
+import { PresentationsLibraryView } from './components/PresentationsLibraryView';
 import { CERTIFICATE_THEMES } from './components/ChildCertificate';
-import { FileText, Presentation, ArrowLeft, Monitor, Award, Sparkles } from 'lucide-react';
+import {
+  FileText,
+  Presentation,
+  ArrowLeft,
+  Monitor,
+  Award,
+  Sparkles,
+  BookOpen,
+  Plus,
+  Play,
+} from 'lucide-react';
 import {
   AppStage,
   ArabicLetter,
@@ -19,7 +31,9 @@ import {
   IssuedCertificate,
   Question,
   QuizConfig,
+  SavedPresentation,
   Student,
+  StudyMaterial,
   WordItem,
 } from './types';
 import {
@@ -52,7 +66,16 @@ import {
   deleteCustomWordFromFirestore,
   subscribeBrandSettings,
   saveBrandSettingsToFirestore,
+  subscribeStudyMaterials,
+  subscribePresentations,
+  savePresentationToFirestore,
+  deletePresentationFromFirestore,
 } from './firebase';
+import {
+  saveLocalPresentation,
+  getAllLocalPresentations,
+  deleteLocalPresentation,
+} from './utils/presentationsDb';
 
 let lastAutoCertThemeIdx = -1;
 
@@ -93,6 +116,16 @@ export default function App() {
   const [brandSettings, setBrandSettings] = useState<BrandSettings>(() => loadBrandSettings());
   const [soundEnabled, setSoundEnabled] = useState(true);
 
+  // Study Materials & Whiteboard session persistence
+  const [studyMaterials, setStudyMaterials] = useState<StudyMaterial[]>([]);
+  const [activeStudyMaterialId, setActiveStudyMaterialId] = useState<string | null>(null);
+  const [openAddMaterialModal, setOpenAddMaterialModal] = useState(false);
+  const [whiteboardDrawingUrl, setWhiteboardDrawingUrl] = useState<string | null>(null);
+
+  // Saved PowerPoint Presentations ("العروض التقديمية")
+  const [savedPresentations, setSavedPresentations] = useState<SavedPresentation[]>([]);
+  const [editingPresentation, setEditingPresentation] = useState<SavedPresentation | null>(null);
+
   // Direct Firestore startup sync & real-time subscriptions (no login)
   useEffect(() => {
     let isMounted = true;
@@ -100,6 +133,15 @@ export default function App() {
     let unsubCerts: (() => void) | null = null;
     let unsubWords: (() => void) | null = null;
     let unsubBrand: (() => void) | null = null;
+    let unsubMaterials: (() => void) | null = null;
+    let unsubPresentations: (() => void) | null = null;
+
+    // Immediately load locally cached presentations so the list appears right away
+    getAllLocalPresentations().then((localDecks) => {
+      if (isMounted && localDecks.length > 0) {
+        setSavedPresentations((prev) => (prev.length > 0 ? prev : localDecks));
+      }
+    });
 
     const initFirestore = async () => {
       const ok = await syncLocalDataToFirestore(
@@ -139,6 +181,25 @@ export default function App() {
         setBrandSettings(remoteSettings);
         saveBrandSettingsLocal(remoteSettings);
       });
+
+      unsubMaterials = subscribeStudyMaterials((remoteMaterials) => {
+        setStudyMaterials(remoteMaterials);
+      });
+
+      unsubPresentations = subscribePresentations((remoteDecks) => {
+        setSavedPresentations((prev) => {
+          const prevSlidesById = new Map<string, SavedPresentation['slides']>();
+          for (const item of prev) {
+            if (item.slides && item.slides.length > 0) {
+              prevSlidesById.set(item.id, item.slides);
+            }
+          }
+          return remoteDecks.map((d) => ({
+            ...d,
+            slides: prevSlidesById.get(d.id) || d.slides,
+          }));
+        });
+      });
     };
 
     initFirestore();
@@ -149,6 +210,8 @@ export default function App() {
       if (unsubCerts) unsubCerts();
       if (unsubWords) unsubWords();
       if (unsubBrand) unsubBrand();
+      if (unsubMaterials) unsubMaterials();
+      if (unsubPresentations) unsubPresentations();
     };
   }, []);
 
@@ -369,10 +432,31 @@ export default function App() {
     }
   };
 
+  const handleSavePresentationToPlatform = async (deck: SavedPresentation) => {
+    await saveLocalPresentation(deck);
+    setSavedPresentations((prev) => {
+      const filtered = prev.filter((p) => p.id !== deck.id);
+      return [deck, ...filtered];
+    });
+    await savePresentationToFirestore(deck);
+  };
+
+  const handleDeleteSavedPresentation = async (id: string) => {
+    setSavedPresentations((prev) => prev.filter((p) => p.id !== id));
+    await Promise.all([
+      deleteLocalPresentation(id),
+      deletePresentationFromFirestore(id).catch((e) =>
+        console.error('Failed to delete presentation from Firebase:', e)
+      ),
+    ]);
+  };
+
   const isToolFullscreenStage =
     stage === 'presentation_studio' ||
+    stage === 'presentations_library' ||
     stage === 'whiteboard' ||
-    stage === 'issued_certificates';
+    stage === 'issued_certificates' ||
+    stage === 'study_materials';
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-amber-200">
@@ -520,6 +604,7 @@ export default function App() {
             type="button"
             onClick={() => {
               sound.playClick();
+              setEditingPresentation(null);
               setStage('presentation_studio');
             }}
             className="w-full text-right rounded-2xl bg-slate-900 hover:bg-slate-800 text-white px-6 py-4 sm:px-8 sm:py-5 shadow-md border border-slate-800 transition-all active:scale-[0.995] flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
@@ -544,6 +629,103 @@ export default function App() {
               <ArrowLeft className="w-4 h-4" />
             </div>
           </button>
+
+          {/* Prominent Rectangular Card: العروض التقديمية (Saved PowerPoints ready to Explain!) */}
+          <button
+            id="btn-open-presentations-library"
+            type="button"
+            onClick={() => {
+              sound.playClick();
+              setStage('presentations_library');
+            }}
+            className="w-full text-right rounded-2xl bg-gradient-to-l from-orange-600 via-amber-600 to-orange-700 hover:brightness-105 text-white px-6 py-4 sm:px-8 sm:py-5 shadow-md border border-orange-400/40 transition-all active:scale-[0.995] flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-white/15 backdrop-blur-xs text-white flex items-center justify-center shrink-0 border border-white/25 shadow-sm">
+                <Play className="w-7 h-7 fill-white" />
+              </div>
+              <div>
+                <div className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2.5 flex-wrap">
+                  <span>العروض التقديمية</span>
+                  {savedPresentations.length > 0 && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-white text-orange-800 text-xs font-black tabular-nums">
+                      {savedPresentations.length}
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs sm:text-sm font-medium text-amber-50 mt-0.5">
+                  عروض الباوربوينت المحفوظة في المنصة · اضغط «اشرح» للتكبير والانتقال بين الشرائح بالليزر والأقلام والمظلل
+                </div>
+              </div>
+            </div>
+
+            <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white group-hover:bg-amber-100 text-orange-900 font-black text-sm shrink-0 self-end sm:self-center transition-colors whitespace-nowrap">
+              <Presentation className="w-4 h-4" />
+              <span>فتح العروض للشرح</span>
+              <ArrowLeft className="w-4 h-4" />
+            </div>
+          </button>
+
+          {/* Prominent Large Rectangular Card: المواد الدراسية with + Upload/Link button */}
+          <div
+            id="card-study-materials"
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              sound.playClick();
+              setOpenAddMaterialModal(false);
+              setStage('study_materials');
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                sound.playClick();
+                setOpenAddMaterialModal(false);
+                setStage('study_materials');
+              }
+            }}
+            className="w-full text-right rounded-2xl bg-gradient-to-l from-sky-700 via-sky-600 to-cyan-700 hover:brightness-105 text-white px-6 py-4 sm:px-8 sm:py-5 shadow-md border border-sky-500/40 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-white/15 backdrop-blur-xs text-white flex items-center justify-center shrink-0 border border-white/25 shadow-sm">
+                <BookOpen className="w-7 h-7" />
+              </div>
+              <div>
+                <div className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2.5 flex-wrap">
+                  <span>المواد الدراسية</span>
+                  {studyMaterials.length > 0 && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-white text-sky-900 text-xs font-black">
+                      {studyMaterials.length}
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs sm:text-sm font-medium text-sky-100 mt-0.5">
+                  ارفع كتاباً أو ملف PDF أو رابطاً للكتابة والتظليل والتأشير بالليزر وحفظ كل ما يكتب · تبديل فوري مع السبورة
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0">
+              <button
+                id="btn-study-materials-plus"
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  sound.playClick();
+                  setOpenAddMaterialModal(true);
+                  setStage('study_materials');
+                }}
+                title="إضافة ملف من الجهاز أو رابط"
+                className="w-11 h-11 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black flex items-center justify-center shadow-md active:scale-90 transition-all"
+              >
+                <Plus className="w-6 h-6" />
+              </button>
+              <span className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-sky-900 group-hover:bg-sky-50 font-black text-sm transition-colors whitespace-nowrap">
+                <span>فتح المواد</span>
+                <ArrowLeft className="w-4 h-4" />
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -551,7 +733,33 @@ export default function App() {
       <main className="flex-1 pb-16">
         {/* Smart Whiteboard Studio */}
         {stage === 'whiteboard' && (
-          <SmartWhiteboard onBack={handleResetToStudents} />
+          <SmartWhiteboard
+            onBack={handleResetToStudents}
+            initialDrawingDataUrl={whiteboardDrawingUrl}
+            onSaveDrawingDataUrl={setWhiteboardDrawingUrl}
+            onSwitchToBook={() => {
+              setOpenAddMaterialModal(false);
+              setStage('study_materials');
+            }}
+            activeBookTitle={
+              studyMaterials.find((m) => m.id === activeStudyMaterialId)?.title ||
+              studyMaterials[0]?.title
+            }
+          />
+        )}
+
+        {/* Study Materials & Interactive Book Studio */}
+        {stage === 'study_materials' && (
+          <StudyMaterialsStudio
+            materials={studyMaterials}
+            activeMaterialId={activeStudyMaterialId}
+            onSelectMaterial={setActiveStudyMaterialId}
+            onMaterialsChange={setStudyMaterials}
+            initialOpenAddModal={openAddMaterialModal}
+            onClearInitialOpenAddModal={() => setOpenAddMaterialModal(false)}
+            onSwitchToWhiteboard={() => setStage('whiteboard')}
+            onBack={handleResetToStudents}
+          />
         )}
 
         {/* Issued Certificates Archive */}
@@ -568,6 +776,28 @@ export default function App() {
           <PresentationStudio
             words={words}
             onBackToPlatform={handleResetToStudents}
+            onSaveToPlatform={handleSavePresentationToPlatform}
+            onOpenPresentationsLibrary={() => setStage('presentations_library')}
+            editingPresentation={editingPresentation}
+            onClearEditingPresentation={() => setEditingPresentation(null)}
+          />
+        )}
+
+        {/* Saved Presentations Library & Explainer View ("العروض التقديمية") */}
+        {stage === 'presentations_library' && (
+          <PresentationsLibraryView
+            presentations={savedPresentations}
+            words={words}
+            onCreateNew={() => {
+              setEditingPresentation(null);
+              setStage('presentation_studio');
+            }}
+            onEditPresentation={(deck) => {
+              setEditingPresentation(deck);
+              setStage('presentation_studio');
+            }}
+            onDeletePresentation={handleDeleteSavedPresentation}
+            onBack={handleResetToStudents}
           />
         )}
 

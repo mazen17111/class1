@@ -244,6 +244,245 @@
         }
       },
       "required": ["id", "logoUrl", "updatedAt"]
+    },
+    "StudyMaterial": {
+      "title": "StudyMaterial",
+      "description": "Uploaded or linked classroom study textbook, PDF, or worksheet metadata",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique study material identifier"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140,
+          "description": "Display name of the book or file"
+        },
+        "sourceType": {
+          "type": "string",
+          "enum": ["pdf_file", "image_file", "url"],
+          "description": "How the material was added"
+        },
+        "fileUrl": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "External file link if provided"
+        },
+        "inlineImage": {
+          "type": "string",
+          "maxLength": 500000,
+          "description": "Optional compressed data URL for small image materials"
+        },
+        "pageCount": {
+          "type": "number",
+          "description": "Total number of pages"
+        },
+        "lastPage": {
+          "type": "number",
+          "description": "Last viewed page number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": ["id", "title", "sourceType", "fileUrl", "pageCount", "lastPage", "createdAt", "updatedAt"]
+    },
+    "MaterialAnnotation": {
+      "title": "MaterialAnnotation",
+      "description": "Saved teacher handwriting, drawings, and highlights on a study material page",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Page key such as p_1"
+        },
+        "materialId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent study material ID"
+        },
+        "pageNumber": {
+          "type": "number",
+          "description": "1-based page number"
+        },
+        "imageData": {
+          "type": "string",
+          "maxLength": 500000,
+          "description": "Transparent PNG data URL containing page annotations"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": ["id", "materialId", "pageNumber", "imageData", "updatedAt"]
+    },
+    "SavedPresentation": {
+      "title": "SavedPresentation",
+      "description": "Saved classroom PowerPoint presentation metadata, theme, and transition configuration",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique presentation identifier"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Presentation title"
+        },
+        "letterId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Arabic letter ID"
+        },
+        "letterChar": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10,
+          "description": "Arabic letter character"
+        },
+        "letterName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Arabic letter name"
+        },
+        "slideCount": {
+          "type": "number",
+          "description": "Number of slides in presentation"
+        },
+        "transitionEnabled": {
+          "type": "boolean",
+          "description": "Whether slide transitions are active during presentation mode"
+        },
+        "transitionType": {
+          "type": "string",
+          "enum": ["none", "fade", "slide", "zoom", "flip", "curtain", "cube"],
+          "description": "Chosen slide transition shape"
+        },
+        "theme": {
+          "type": "object",
+          "description": "Deck visual color and pattern theme"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "letterId",
+        "letterChar",
+        "letterName",
+        "slideCount",
+        "transitionEnabled",
+        "transitionType",
+        "theme",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SavedPresentationSlide": {
+      "title": "SavedPresentationSlide",
+      "description": "Individual slide payload belonging to a saved presentation",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Slide key such as s_0"
+        },
+        "presentationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent presentation ID"
+        },
+        "slideIndex": {
+          "type": "number",
+          "description": "0-based slide order index"
+        },
+        "slideData": {
+          "type": "object",
+          "description": "Structured slide fields, items, and embedded images"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": ["id", "presentationId", "slideIndex", "slideData", "updatedAt"]
+    },
+    "PresentationAnnotation": {
+      "title": "PresentationAnnotation",
+      "description": "Saved teacher handwriting, highlights, and notes drawn over a presentation slide",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Slide annotation key such as a_0"
+        },
+        "presentationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent presentation ID"
+        },
+        "slideIndex": {
+          "type": "number",
+          "description": "0-based slide index"
+        },
+        "imageData": {
+          "type": "string",
+          "maxLength": 500000,
+          "description": "Transparent PNG data URL of slide ink annotations"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": ["id", "presentationId", "slideIndex", "imageData", "updatedAt"]
     }
   },
   "firestore": {
@@ -262,6 +501,26 @@
     "/settings/{settingId}": {
       "schema": { "$ref": "#/entities/BrandingSettings" },
       "description": "Platform settings such as the uploaded or linked teacher logo"
+    },
+    "/studyMaterials/{materialId}": {
+      "schema": { "$ref": "#/entities/StudyMaterial" },
+      "description": "Teacher study materials (books, PDFs, links, and worksheets)"
+    },
+    "/studyMaterials/{materialId}/annotations/{pageKey}": {
+      "schema": { "$ref": "#/entities/MaterialAnnotation" },
+      "description": "Per-page saved teacher annotations for each study material"
+    },
+    "/presentations/{presentationId}": {
+      "schema": { "$ref": "#/entities/SavedPresentation" },
+      "description": "Saved interactive PowerPoint presentations created by the teacher"
+    },
+    "/presentations/{presentationId}/slides/{slideKey}": {
+      "schema": { "$ref": "#/entities/SavedPresentationSlide" },
+      "description": "Ordered slides belonging to each saved presentation"
+    },
+    "/presentations/{presentationId}/annotations/{annKey}": {
+      "schema": { "$ref": "#/entities/PresentationAnnotation" },
+      "description": "Per-slide saved handwriting and highlight annotations for explainer mode"
     }
   }
 }

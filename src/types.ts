@@ -86,14 +86,54 @@ export interface QuizConfig {
 }
 
 export type AppStage = 
-  | 'students'            // قائمة الطلاب والقرعة
-  | 'letter_select'       // اختيار الحرف
-  | 'quiz_setup'          // إعداد النشاط وعدد الأسئلة
-  | 'quiz_active'         // حل الأسئلة التفاعلية
-  | 'quiz_result'         // النتيجة والاحتفال
-  | 'presentation_studio' // استوديو إصدار وتعديل باوربوينت و PDF
-  | 'whiteboard'          // السبورة الذكية التفاعلية
-  | 'issued_certificates';// أرشيف الشهادات الصادرة
+  | 'students'               // قائمة الطلاب والقرعة
+  | 'letter_select'          // اختيار الحرف
+  | 'quiz_setup'             // إعداد النشاط وعدد الأسئلة
+  | 'quiz_active'            // حل الأسئلة التفاعلية
+  | 'quiz_result'            // النتيجة والاحتفال
+  | 'presentation_studio'    // استوديو إصدار وتعديل باوربوينت و PDF
+  | 'presentations_library'  // مكتبة العروض التقديمية وشرح الباوربوينت
+  | 'whiteboard'             // السبورة الذكية التفاعلية
+  | 'issued_certificates'    // أرشيف الشهادات الصادرة
+  | 'study_materials';       // المواد الدراسية والكتابة على الكتب
+
+export type SlideTransitionType =
+  | 'none'
+  | 'fade'
+  | 'slide'
+  | 'zoom'
+  | 'flip'
+  | 'curtain'
+  | 'cube';
+
+export interface SavedPresentation {
+  id: string;
+  title: string;
+  letterId: string;
+  letterChar: string;
+  letterName: string;
+  theme: DeckTheme;
+  slides: PresentationSlide[];
+  slideCount: number;
+  transitionEnabled: boolean;
+  transitionType: SlideTransitionType;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export type StudyMaterialSourceType = 'pdf_file' | 'image_file' | 'url';
+
+export interface StudyMaterial {
+  id: string;
+  title: string;
+  sourceType: StudyMaterialSourceType;
+  fileUrl: string;
+  inlineImage?: string;
+  pageCount: number;
+  lastPage: number;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
 
 export interface IssuedCertificate {
   id: string;

@@ -164,5 +164,219 @@ service cloud.firestore {
 
       allow delete: if false;
     }
+
+    function isValidStudyMaterial(data, materialId) {
+      return data.keys().hasAll([
+          'id', 'title', 'sourceType', 'fileUrl', 'pageCount', 'lastPage', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'title', 'sourceType', 'fileUrl', 'inlineImage', 'pageCount', 'lastPage', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string && isValidId(data.id) && data.id == materialId
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 140
+        && data.sourceType is string && data.sourceType in ['pdf_file', 'image_file', 'url']
+        && data.fileUrl is string && data.fileUrl.size() <= 2000
+        && (!('inlineImage' in data) || (data.inlineImage is string && data.inlineImage.size() <= 500000))
+        && data.pageCount is number && data.pageCount >= 1 && data.pageCount <= 2000
+        && data.lastPage is number && data.lastPage >= 1 && data.lastPage <= 2000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMaterialAnnotation(data, materialId, pageKey) {
+      return data.keys().hasAll(['id', 'materialId', 'pageNumber', 'imageData', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'materialId', 'pageNumber', 'imageData', 'updatedAt'])
+        && data.id is string && isValidId(data.id) && data.id == pageKey && data.id.size() <= 40
+        && data.materialId is string && isValidId(data.materialId) && data.materialId == materialId
+        && data.pageNumber is number && data.pageNumber >= 1 && data.pageNumber <= 2000
+        && data.imageData is string && data.imageData.size() <= 500000
+        && data.updatedAt is timestamp;
+    }
+
+    // Classroom Study Materials & Page Annotations
+    match /studyMaterials/{materialId} {
+      allow get: if isValidId(materialId);
+      allow list: if true;
+
+      allow create: if isValidId(materialId)
+        && isValidStudyMaterial(incoming(), materialId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(materialId)
+        && isValidStudyMaterial(incoming(), materialId)
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'pageCount', 'lastPage', 'updatedAt']);
+
+      allow delete: if isValidId(materialId);
+
+      match /annotations/{pageKey} {
+        allow get: if isValidId(materialId) && isValidId(pageKey);
+        allow list: if isValidId(materialId);
+
+        allow create: if isValidId(materialId)
+          && isValidId(pageKey)
+          && isValidMaterialAnnotation(incoming(), materialId, pageKey)
+          && exists(/databases/$(database)/documents/studyMaterials/$(materialId))
+          && incoming().updatedAt == request.time;
+
+        allow update: if isValidId(materialId)
+          && isValidId(pageKey)
+          && isValidMaterialAnnotation(incoming(), materialId, pageKey)
+          && exists(/databases/$(database)/documents/studyMaterials/$(materialId))
+          && incoming().id == existing().id
+          && incoming().materialId == existing().materialId
+          && incoming().pageNumber == existing().pageNumber
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['imageData', 'updatedAt']);
+
+        allow delete: if isValidId(materialId) && isValidId(pageKey);
+      }
+    }
+
+    function isValidDeckTheme(t) {
+      return t is map
+        && t.keys().hasAll([
+          'id', 'name', 'primaryHex', 'secondaryHex', 'accentHex',
+          'bgHex', 'surfaceHex', 'borderHex', 'textHex', 'mutedTextHex', 'patternType'
+        ])
+        && t.keys().hasOnly([
+          'id', 'name', 'primaryHex', 'secondaryHex', 'accentHex',
+          'bgHex', 'surfaceHex', 'borderHex', 'textHex', 'mutedTextHex', 'patternType'
+        ])
+        && t.id is string && t.id.size() >= 1 && t.id.size() <= 40
+        && t.name is string && t.name.size() >= 1 && t.name.size() <= 80
+        && t.primaryHex is string && t.primaryHex.size() <= 20
+        && t.secondaryHex is string && t.secondaryHex.size() <= 20
+        && t.accentHex is string && t.accentHex.size() <= 20
+        && t.bgHex is string && t.bgHex.size() <= 20
+        && t.surfaceHex is string && t.surfaceHex.size() <= 20
+        && t.borderHex is string && t.borderHex.size() <= 20
+        && t.textHex is string && t.textHex.size() <= 20
+        && t.mutedTextHex is string && t.mutedTextHex.size() <= 20
+        && t.patternType is string && t.patternType in ['waves', 'geometric', 'diagonal', 'arches', 'ribbons', 'dots'];
+    }
+
+    function isValidPresentation(data, presentationId) {
+      return data.keys().hasAll([
+          'id', 'title', 'letterId', 'letterChar', 'letterName',
+          'slideCount', 'transitionEnabled', 'transitionType', 'theme', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'title', 'letterId', 'letterChar', 'letterName',
+          'slideCount', 'transitionEnabled', 'transitionType', 'theme', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string && isValidId(data.id) && data.id == presentationId
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && data.letterId is string && data.letterId.size() >= 1 && data.letterId.size() <= 40
+        && data.letterChar is string && data.letterChar.size() >= 1 && data.letterChar.size() <= 10
+        && data.letterName is string && data.letterName.size() >= 1 && data.letterName.size() <= 40
+        && data.slideCount is number && data.slideCount >= 1 && data.slideCount <= 100
+        && data.transitionEnabled is bool
+        && data.transitionType is string && data.transitionType in ['none', 'fade', 'slide', 'zoom', 'flip', 'curtain', 'cube']
+        && isValidDeckTheme(data.theme)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPresentationSlide(data, presentationId, slideKey) {
+      return data.keys().hasAll(['id', 'presentationId', 'slideIndex', 'slideData', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'presentationId', 'slideIndex', 'slideData', 'updatedAt'])
+        && data.id is string && isValidId(data.id) && data.id == slideKey && data.id.size() <= 40
+        && data.presentationId is string && isValidId(data.presentationId) && data.presentationId == presentationId
+        && data.slideIndex is number && data.slideIndex >= 0 && data.slideIndex <= 100
+        && data.slideData is map
+        && data.slideData.keys().hasAll(['id', 'kind', 'layoutVariant', 'title', 'subtitle', 'items', 'teacherNote'])
+        && data.slideData.keys().hasOnly([
+          'id', 'kind', 'layoutVariant', 'title', 'subtitle', 'badgeText',
+          'highlightLetter', 'bodyText', 'items', 'uploadedImages', 'teacherNote',
+          'textAlign', 'headerLetterSide', 'columnsOverride', 'fontScale', 'swapPositions'
+        ])
+        && data.slideData.id is string && data.slideData.id.size() >= 1 && data.slideData.id.size() <= 128
+        && data.slideData.title is string && data.slideData.title.size() <= 300
+        && data.slideData.subtitle is string && data.slideData.subtitle.size() <= 500
+        && data.slideData.items is list && data.slideData.items.size() <= 50
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPresentationAnnotation(data, presentationId, annKey) {
+      return data.keys().hasAll(['id', 'presentationId', 'slideIndex', 'imageData', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'presentationId', 'slideIndex', 'imageData', 'updatedAt'])
+        && data.id is string && isValidId(data.id) && data.id == annKey && data.id.size() <= 40
+        && data.presentationId is string && isValidId(data.presentationId) && data.presentationId == presentationId
+        && data.slideIndex is number && data.slideIndex >= 0 && data.slideIndex <= 100
+        && data.imageData is string && data.imageData.size() <= 500000
+        && data.updatedAt is timestamp;
+    }
+
+    // Saved Teacher PowerPoint Presentations, Slides & Explainer Annotations
+    match /presentations/{presentationId} {
+      allow get: if isValidId(presentationId);
+      allow list: if true;
+
+      allow create: if isValidId(presentationId)
+        && isValidPresentation(incoming(), presentationId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(presentationId)
+        && isValidPresentation(incoming(), presentationId)
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'letterId', 'letterChar', 'letterName',
+          'slideCount', 'transitionEnabled', 'transitionType', 'theme', 'updatedAt'
+        ]);
+
+      allow delete: if isValidId(presentationId);
+
+      match /slides/{slideKey} {
+        allow get: if isValidId(presentationId) && isValidId(slideKey);
+        allow list: if isValidId(presentationId);
+
+        allow create: if isValidId(presentationId)
+          && isValidId(slideKey)
+          && isValidPresentationSlide(incoming(), presentationId, slideKey)
+          && exists(/databases/$(database)/documents/presentations/$(presentationId))
+          && incoming().updatedAt == request.time;
+
+        allow update: if isValidId(presentationId)
+          && isValidId(slideKey)
+          && isValidPresentationSlide(incoming(), presentationId, slideKey)
+          && exists(/databases/$(database)/documents/presentations/$(presentationId))
+          && incoming().id == existing().id
+          && incoming().presentationId == existing().presentationId
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['slideIndex', 'slideData', 'updatedAt']);
+
+        allow delete: if isValidId(presentationId) && isValidId(slideKey);
+      }
+
+      match /annotations/{annKey} {
+        allow get: if isValidId(presentationId) && isValidId(annKey);
+        allow list: if isValidId(presentationId);
+
+        allow create: if isValidId(presentationId)
+          && isValidId(annKey)
+          && isValidPresentationAnnotation(incoming(), presentationId, annKey)
+          && exists(/databases/$(database)/documents/presentations/$(presentationId))
+          && incoming().updatedAt == request.time;
+
+        allow update: if isValidId(presentationId)
+          && isValidId(annKey)
+          && isValidPresentationAnnotation(incoming(), presentationId, annKey)
+          && exists(/databases/$(database)/documents/presentations/$(presentationId))
+          && incoming().id == existing().id
+          && incoming().presentationId == existing().presentationId
+          && incoming().slideIndex == existing().slideIndex
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['imageData', 'updatedAt']);
+
+        allow delete: if isValidId(presentationId) && isValidId(annKey);
+      }
+    }
   }
 }
