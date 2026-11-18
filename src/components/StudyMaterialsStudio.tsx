@@ -27,6 +27,8 @@ import {
   X,
   Hand,
   CheckCircle2,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { StudyMaterial, StudyMaterialSourceType } from '../types';
 import { sound } from '../utils/audio';
@@ -244,6 +246,12 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [loadedPdf, setLoadedPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [annotationsByPage, setAnnotationsByPage] = useState<Record<number, string>>({});
+  const [isBookFullscreen, setIsBookFullscreen] = useState<boolean>(() =>
+    Boolean(activeMaterial && !initialOpenAddModal)
+  );
+  const hasAutoOpenedFullscreenRef = useRef<boolean>(
+    Boolean(activeMaterial && !initialOpenAddModal)
+  );
 
   // Scroll & page element refs for downward scrolling book mode
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -303,6 +311,38 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
   const laserPointerPosRef = useRef<{ x: number; y: number } | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
+  const tryEnterFullscreen = useCallback((el?: HTMLElement | null) => {
+    try {
+      const target = (el || document.documentElement) as HTMLElement & {
+        webkitRequestFullscreen?: () => Promise<void> | void;
+      };
+      if (document.fullscreenElement) return;
+      const maybePromise =
+        target.requestFullscreen?.() ?? target.webkitRequestFullscreen?.();
+      if (maybePromise && typeof (maybePromise as Promise<void>).catch === 'function') {
+        (maybePromise as Promise<void>).catch(() => {});
+      }
+    } catch {
+      // Sandboxed iframes may block native fullscreen; CSS fixed 100vw×100dvh still fills viewport
+    }
+  }, []);
+
+  const tryExitFullscreen = useCallback(() => {
+    try {
+      const doc = document as Document & {
+        webkitExitFullscreen?: () => Promise<void> | void;
+      };
+      if (document.fullscreenElement) {
+        const maybePromise = doc.exitFullscreen?.() ?? doc.webkitExitFullscreen?.();
+        if (maybePromise && typeof (maybePromise as Promise<void>).catch === 'function') {
+          (maybePromise as Promise<void>).catch(() => {});
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     if (initialOpenAddModal) {
       setShowAddModal(true);
@@ -315,6 +355,31 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
       onSelectMaterial(materials[0].id);
     }
   }, [activeMaterialId, materials, onSelectMaterial]);
+
+  useEffect(() => {
+    if (activeMaterial && !showAddModal && !hasAutoOpenedFullscreenRef.current) {
+      hasAutoOpenedFullscreenRef.current = true;
+      setIsBookFullscreen(true);
+    }
+  }, [activeMaterial, showAddModal]);
+
+  useEffect(() => {
+    if (!isBookFullscreen || showAddModal) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsBookFullscreen(false);
+        tryExitFullscreen();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isBookFullscreen, showAddModal, tryExitFullscreen]);
+
+  useEffect(() => {
+    return () => {
+      tryExitFullscreen();
+    };
+  }, [tryExitFullscreen]);
 
   // Save per-page annotation to IndexedDB + Firestore
   const handleSavePageAnnotation = useCallback(
@@ -1064,6 +1129,9 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
       sound.playSuccess();
       setTitleInput('');
       setShowAddModal(false);
+      setIsBookFullscreen(true);
+      hasAutoOpenedFullscreenRef.current = true;
+      tryEnterFullscreen(document.documentElement);
     } catch (err) {
       console.error('Upload error:', err);
       setUploadError('تعذر قراءة الملف المختار. يرجى التأكد من أن الملف غير تالف.');
@@ -1114,6 +1182,9 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
       setTitleInput('');
       setUrlInput('');
       setShowAddModal(false);
+      setIsBookFullscreen(true);
+      hasAutoOpenedFullscreenRef.current = true;
+      tryEnterFullscreen(document.documentElement);
     } catch (err) {
       console.error('URL add error:', err);
       setUploadError('حدث خطأ أثناء حفظ الرابط.');
@@ -1164,78 +1235,107 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
   const canUndo = renderMode === 'pdf' ? activePageUndoRedo.canUndo : canUndoSingle;
   const canRedo = renderMode === 'pdf' ? activePageUndoRedo.canRedo : canRedoSingle;
 
+  const inBookFullscreen = Boolean(activeMaterial && isBookFullscreen);
+
   return (
-    <div className="max-w-7xl mx-auto px-3 sm:px-5 py-4 sm:py-5" dir="rtl">
-      {/* Studio Top Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            id="btn-materials-back"
-            type="button"
-            onClick={() => {
-              sound.playClick();
-              onBack();
-            }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 font-black text-sm border border-slate-200 shadow-xs active:scale-95 transition-all"
-          >
-            <ArrowRight className="w-4 h-4" />
-            <span>العودة للمنصة</span>
-          </button>
-
-          <button
-            id="btn-switch-book-to-whiteboard"
-            type="button"
-            onClick={() => {
-              sound.playClick();
-              onSwitchToWhiteboard();
-            }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm shadow-sm active:scale-95 transition-all"
-          >
-            <Monitor className="w-4 h-4" />
-            <span>التبديل للسبورة الذكية</span>
-          </button>
-
-          <button
-            id="btn-add-study-material"
-            type="button"
-            onClick={() => {
-              sound.playClick();
-              setUploadError('');
-              setShowAddModal(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-sm shadow-sm active:scale-95 transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>إضافة كتاب / ملف</span>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3 flex-wrap">
-          {saveStatus === 'saving' && (
-            <span className="text-xs font-bold text-amber-700">جاري حفظ الكتابة...</span>
-          )}
-          {saveStatus === 'saved' && (
-            <span className="inline-flex items-center gap-1 text-xs font-black text-emerald-700">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>تم حفظ ما كُتب</span>
-            </span>
-          )}
-
-          {activeMaterial && (
+    <div
+      dir="rtl"
+      className={
+        inBookFullscreen
+          ? 'fixed inset-0 z-[9999] w-screen h-[100dvh] bg-slate-900 flex flex-col overflow-hidden'
+          : 'max-w-7xl mx-auto px-3 sm:px-5 py-4 sm:py-5'
+      }
+    >
+      {/* Windowed Studio Top Bar (visible when not full-screen) */}
+      {!inBookFullscreen && (
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2.5 flex-wrap">
             <button
+              id="btn-materials-back"
               type="button"
-              onClick={handleToolbarDownloadPage}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm shadow-xs active:scale-95 transition-all"
+              onClick={() => {
+                sound.playClick();
+                tryExitFullscreen();
+                onBack();
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 font-black text-sm border border-slate-200 shadow-xs active:scale-95 transition-all"
             >
-              <Download className="w-4 h-4" />
-              <span>حفظ الصفحة كصورة</span>
+              <ArrowRight className="w-4 h-4" />
+              <span>العودة للمنصة</span>
             </button>
-          )}
-        </div>
-      </div>
 
-      {/* Saved Materials Library Strip */}
-      {materials.length > 0 && (
+            <button
+              id="btn-switch-book-to-whiteboard"
+              type="button"
+              onClick={() => {
+                sound.playClick();
+                tryExitFullscreen();
+                onSwitchToWhiteboard();
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm shadow-sm active:scale-95 transition-all"
+            >
+              <Monitor className="w-4 h-4" />
+              <span>التبديل للسبورة الذكية</span>
+            </button>
+
+            <button
+              id="btn-add-study-material"
+              type="button"
+              onClick={() => {
+                sound.playClick();
+                setUploadError('');
+                setShowAddModal(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-sm shadow-sm active:scale-95 transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>إضافة كتاب / ملف</span>
+            </button>
+
+            {activeMaterial && (
+              <button
+                id="btn-book-maximize-fullscreen"
+                type="button"
+                onClick={() => {
+                  sound.playClick();
+                  setIsBookFullscreen(true);
+                  tryEnterFullscreen(document.documentElement);
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-sm shadow-sm active:scale-95 transition-all"
+              >
+                <Maximize2 className="w-4 h-4 text-amber-400" />
+                <span>تكبير الشاشة</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            {saveStatus === 'saving' && (
+              <span className="text-xs font-bold text-amber-700">جاري حفظ الكتابة...</span>
+            )}
+            {saveStatus === 'saved' && (
+              <span className="inline-flex items-center gap-1 text-xs font-black text-emerald-700">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>تم حفظ ما كُتب</span>
+              </span>
+            )}
+
+            {activeMaterial && (
+              <button
+                type="button"
+                onClick={handleToolbarDownloadPage}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm shadow-xs active:scale-95 transition-all"
+              >
+                <Download className="w-4 h-4" />
+                <span>حفظ الصفحة كصورة</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Saved Materials Library Strip (visible when not full-screen) */}
+      {!inBookFullscreen && materials.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200 p-2.5 mb-4 flex items-center gap-2 overflow-x-auto">
           <div className="flex items-center gap-1.5 px-2 text-xs font-black text-slate-500 shrink-0">
             <BookOpen className="w-4 h-4 text-sky-600" />
@@ -1255,9 +1355,12 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    if (isSelected) return;
                     sound.playClick();
-                    onSelectMaterial(mat.id);
+                    if (!isSelected) {
+                      onSelectMaterial(mat.id);
+                    }
+                    setIsBookFullscreen(true);
+                    tryEnterFullscreen(document.documentElement);
                   }}
                   className="flex items-center gap-1.5 whitespace-nowrap"
                 >
@@ -1325,8 +1428,432 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
         </div>
       ) : (
         <>
-          {/* ANNOTATION & SCROLL TOOLBAR */}
-          <div className="relative z-20 bg-white rounded-2xl border-2 border-slate-200 shadow-lg p-3 mb-4 space-y-2.5">
+          {/* FLOATING TRANSLUCENT TOP TOOLBAR (in Fullscreen) OR WINDOWED CARD TOOLBAR */}
+          {inBookFullscreen ? (
+            <div className="fixed top-2 inset-x-0 z-40 px-2 sm:px-4 flex flex-col items-center pointer-events-none">
+              <div
+                className={`pointer-events-auto max-w-full rounded-2xl border border-white/25 px-2.5 py-1.5 shadow-lg backdrop-blur-md transition-all duration-200 ${
+                  colorPickerTool || confirmClearPage
+                    ? 'bg-slate-950/85'
+                    : 'bg-slate-950/35 hover:bg-slate-950/80'
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                  {/* Exit to Platform */}
+                  <button
+                    id="btn-book-fs-exit"
+                    type="button"
+                    onClick={() => {
+                      sound.playClick();
+                      tryExitFullscreen();
+                      onBack();
+                    }}
+                    title="العودة للمنصة"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-600/85 hover:bg-rose-600 text-white font-black text-xs shadow-xs active:scale-95 transition-all whitespace-nowrap shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>إنهاء</span>
+                  </button>
+
+                  {/* Minimize Screen Button */}
+                  <button
+                    id="btn-book-minimize-fullscreen"
+                    type="button"
+                    onClick={() => {
+                      sound.playClick();
+                      setIsBookFullscreen(false);
+                      tryExitFullscreen();
+                    }}
+                    title="تصغير الشاشة والعودة لإطار الكتاب"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900/50 hover:bg-slate-900/85 text-white border border-white/25 font-black text-xs transition-all whitespace-nowrap shrink-0"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5 text-amber-300" />
+                    <span>تصغير الشاشة</span>
+                  </button>
+
+                  {/* Switch to Whiteboard */}
+                  <button
+                    id="btn-book-fs-whiteboard"
+                    type="button"
+                    onClick={() => {
+                      sound.playClick();
+                      tryExitFullscreen();
+                      onSwitchToWhiteboard();
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-600/85 hover:bg-indigo-600 text-white border border-white/20 font-black text-xs transition-all whitespace-nowrap shrink-0"
+                  >
+                    <Monitor className="w-3.5 h-3.5" />
+                    <span>السبورة</span>
+                  </button>
+
+                  {/* Add Book/File */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playClick();
+                      setUploadError('');
+                      setShowAddModal(true);
+                    }}
+                    title="إضافة كتاب / ملف"
+                    className="p-1.5 rounded-xl bg-amber-500/90 hover:bg-amber-500 text-slate-950 border border-amber-300 font-black text-xs transition-all shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* 3 Pens */}
+                  {penTools.map((pen) => {
+                    const isSelected = activeTool === pen.id;
+                    const settings = toolSettings[pen.id];
+                    return (
+                      <button
+                        key={pen.id}
+                        type="button"
+                        onClick={() => {
+                          sound.playClick();
+                          setActiveTool(pen.id);
+                        }}
+                        className={`flex items-center gap-1.5 pl-2 pr-2.5 py-1.5 rounded-xl border font-black text-xs transition-all whitespace-nowrap shrink-0 ${
+                          isSelected
+                            ? 'bg-white/95 text-slate-950 border-amber-400 shadow-sm'
+                            : 'bg-slate-900/35 hover:bg-slate-900/75 text-white border-white/20'
+                        }`}
+                      >
+                        <PenTool
+                          className="w-3.5 h-3.5"
+                          style={{ color: settings.color }}
+                        />
+                        <span>{pen.label}</span>
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            sound.playClick();
+                            setActiveTool(pen.id);
+                            setColorPickerTool(colorPickerTool === pen.id ? null : pen.id);
+                          }}
+                          title="تغيير لون القلم"
+                          className="w-3 h-3 rounded-full border border-white/80 cursor-pointer"
+                          style={{ backgroundColor: settings.color }}
+                        />
+                      </button>
+                    );
+                  })}
+
+                  {/* Highlighter */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playClick();
+                      setActiveTool('highlighter');
+                    }}
+                    className={`flex items-center gap-1.5 pl-2 pr-2.5 py-1.5 rounded-xl border font-black text-xs transition-all whitespace-nowrap shrink-0 ${
+                      activeTool === 'highlighter'
+                        ? 'bg-amber-400/95 text-slate-950 border-amber-200 shadow-sm'
+                        : 'bg-slate-900/35 hover:bg-slate-900/75 text-amber-200 border-white/20'
+                    }`}
+                  >
+                    <Highlighter className="w-3.5 h-3.5" />
+                    <span>تظليل</span>
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        sound.playClick();
+                        setActiveTool('highlighter');
+                        setColorPickerTool(
+                          colorPickerTool === 'highlighter' ? null : 'highlighter'
+                        );
+                      }}
+                      title="تغيير لون المظلل"
+                      className="w-3 h-3 rounded-full border border-slate-900 cursor-pointer"
+                      style={{ backgroundColor: toolSettings.highlighter.color }}
+                    />
+                  </button>
+
+                  {/* Laser Pointer */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playClick();
+                      setActiveTool('laser');
+                    }}
+                    className={`flex items-center gap-1.5 pl-2 pr-2.5 py-1.5 rounded-xl border font-black text-xs transition-all whitespace-nowrap shrink-0 ${
+                      activeTool === 'laser'
+                        ? 'bg-rose-600/90 text-white border-rose-300 shadow-sm'
+                        : 'bg-slate-900/35 hover:bg-slate-900/75 text-white border-white/20'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>مؤشر ليزر</span>
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        sound.playClick();
+                        setActiveTool('laser');
+                        setColorPickerTool(colorPickerTool === 'laser' ? null : 'laser');
+                      }}
+                      title="تغيير لون المؤشر"
+                      className="w-3 h-3 rounded-full border border-white cursor-pointer"
+                      style={{ backgroundColor: toolSettings.laser.color }}
+                    />
+                  </button>
+
+                  {/* Eraser */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playClick();
+                      setActiveTool('eraser');
+                      setColorPickerTool(null);
+                    }}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border font-black text-xs transition-all whitespace-nowrap shrink-0 ${
+                      activeTool === 'eraser'
+                        ? 'bg-white/95 text-slate-950 border-white shadow-sm'
+                        : 'bg-slate-900/35 hover:bg-slate-900/75 text-white border-white/20'
+                    }`}
+                  >
+                    <Eraser className="w-3.5 h-3.5" />
+                    <span>مساحة</span>
+                  </button>
+
+                  {/* Hand / Scroll */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playClick();
+                      setActiveTool('hand');
+                      setColorPickerTool(null);
+                    }}
+                    title="تحريك وتمرير الصفحات باللمس"
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border font-black text-xs transition-all whitespace-nowrap shrink-0 ${
+                      activeTool === 'hand'
+                        ? 'bg-sky-500/95 text-white border-sky-200 shadow-sm'
+                        : 'bg-slate-900/35 hover:bg-slate-900/75 text-sky-100 border-white/20'
+                    }`}
+                  >
+                    <Hand className="w-3.5 h-3.5" />
+                    <span>تمرير</span>
+                  </button>
+
+                  {isDrawTool && activeTool !== 'eraser' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sound.playClick();
+                        setColorPickerTool(colorPickerTool === activeTool ? null : activeTool);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 text-white border border-white/20 text-xs font-black whitespace-nowrap shrink-0"
+                    >
+                      <Palette className="w-3.5 h-3.5" />
+                      <span>اللون</span>
+                    </button>
+                  )}
+
+                  {isDrawTool && (
+                    <div className="hidden lg:flex items-center gap-0.5 bg-slate-900/40 px-1.5 py-1 rounded-xl border border-white/15">
+                      {activePresets.map((preset) => {
+                        const isSizeActive = Math.abs(activeSettings.size - preset.size) <= 1;
+                        return (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => {
+                              sound.playClick();
+                              updateToolSize(activeTool, preset.size);
+                            }}
+                            className={`px-2 py-0.5 rounded-lg text-[11px] font-black transition-all ${
+                              isSizeActive
+                                ? 'bg-amber-400 text-slate-950'
+                                : 'text-white/90 hover:bg-white/15'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Undo / Redo / Clear */}
+                  <button
+                    type="button"
+                    onClick={handleToolbarUndo}
+                    disabled={!canUndo}
+                    title="تراجع"
+                    className="p-1.5 rounded-xl bg-slate-900/35 hover:bg-slate-900/75 text-white disabled:opacity-35 border border-white/20"
+                  >
+                    <Undo2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleToolbarRedo}
+                    disabled={!canRedo}
+                    title="إعادة"
+                    className="p-1.5 rounded-xl bg-slate-900/35 hover:bg-slate-900/75 text-white disabled:opacity-35 border border-white/20"
+                  >
+                    <Redo2 className="w-3.5 h-3.5" />
+                  </button>
+
+                  {confirmClearPage ? (
+                    <div className="flex items-center gap-1 bg-rose-950/90 border border-rose-300/40 px-2 py-1 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={handleToolbarClearPage}
+                        className="px-2 py-0.5 bg-rose-600 text-white rounded text-[11px] font-black"
+                      >
+                        مسح
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmClearPage(false)}
+                        className="px-2 py-0.5 bg-slate-700 text-white rounded text-[11px] font-bold"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmClearPage(true)}
+                      title="مسح الكتابة عن الصفحة الحالية"
+                      className="p-1.5 rounded-xl bg-rose-900/45 hover:bg-rose-700/85 text-rose-100 border border-rose-300/30"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
+                  {/* Page Navigation */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center gap-1 bg-slate-900/40 px-2 py-1 rounded-xl border border-white/15 text-white">
+                      <button
+                        type="button"
+                        onClick={() => scrollToPdfPage(currentPage - 1)}
+                        disabled={currentPage <= 1}
+                        className="p-0.5 rounded hover:bg-white/15 disabled:opacity-35"
+                        title="الصفحة السابقة"
+                      >
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="text-[11px] font-black tabular-nums px-1 whitespace-nowrap">
+                        {currentPage} / {totalPages}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => scrollToPdfPage(currentPage + 1)}
+                        disabled={currentPage >= totalPages}
+                        className="p-0.5 rounded hover:bg-white/15 disabled:opacity-35"
+                        title="الصفحة التالية"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Zoom */}
+                  <div className="flex items-center gap-1 bg-slate-900/40 px-1.5 py-1 rounded-xl border border-white/15 text-white">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setZoom((z) => Math.max(0.6, Number((z - 0.15).toFixed(2))))
+                      }
+                      className="p-0.5 rounded hover:bg-white/15"
+                      title="تصغير الصفحة"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="text-[11px] font-black tabular-nums w-9 text-center">
+                      {Math.round(zoom * 100)}%
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setZoom((z) => Math.min(1.8, Number((z + 0.15).toFixed(2))))
+                      }
+                      className="p-0.5 rounded hover:bg-white/15"
+                      title="تكبير الصفحة"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Download Page */}
+                  <button
+                    type="button"
+                    onClick={handleToolbarDownloadPage}
+                    title="حفظ الصفحة كصورة"
+                    className="p-1.5 rounded-xl bg-emerald-600/85 hover:bg-emerald-600 text-white border border-white/20"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
+
+                  {saveStatus === 'saving' && (
+                    <span className="text-[11px] font-bold text-amber-300 px-1">جاري الحفظ...</span>
+                  )}
+                  {saveStatus === 'saved' && (
+                    <span className="inline-flex items-center gap-0.5 text-[11px] font-black text-emerald-300 px-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>تم الحفظ</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Color Picker Popout inside Translucent Bar */}
+                {colorPickerTool && (
+                  <div className="mt-2 pt-2 border-t border-white/20 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-white">اختر اللون:</span>
+                      {QUICK_PALETTE.map((hex) => {
+                        const selected =
+                          toolSettings[colorPickerTool].color.toUpperCase() === hex;
+                        return (
+                          <button
+                            key={hex}
+                            type="button"
+                            onClick={() => {
+                              sound.playClick();
+                              updateToolColor(colorPickerTool, hex);
+                            }}
+                            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                              selected
+                                ? 'ring-2 ring-amber-400 border-white scale-110'
+                                : 'border-white/50'
+                            }`}
+                            style={{ backgroundColor: hex }}
+                          >
+                            {selected && (
+                              <Check
+                                className={`w-3 h-3 ${
+                                  hex === '#FFFFFF' || hex === '#FACC15'
+                                    ? 'text-slate-900'
+                                    : 'text-white'
+                                }`}
+                              />
+                            )}
+                          </button>
+                        );
+                      })}
+                      <label className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900/60 border border-white/25 cursor-pointer text-xs font-bold text-white">
+                        <input
+                          type="color"
+                          value={toolSettings[colorPickerTool].color}
+                          onChange={(e) => updateToolColor(colorPickerTool, e.target.value)}
+                          className="w-4 h-4 border-0 bg-transparent cursor-pointer p-0"
+                        />
+                        <span>مخصص</span>
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setColorPickerTool(null)}
+                      className="px-3 py-1 rounded-lg bg-amber-400 text-slate-950 text-xs font-black"
+                    >
+                      تم
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* WINDOWED ANNOTATION & SCROLL TOOLBAR */
+            <div className="relative z-20 bg-white rounded-2xl border-2 border-slate-200 shadow-lg p-3 mb-4 space-y-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2.5">
               {/* Pens, Highlighter, Laser, Eraser, Hand Scroll */}
               <div className="flex flex-wrap items-center gap-1.5">
@@ -1688,14 +2215,23 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
               </div>
             </div>
           </div>
+          )}
 
           {/* VERTICAL SCROLLABLE BOOK READER & ANNOTATIONS VIEWPORT */}
           <div
             ref={scrollContainerRef}
-            className="bg-slate-200/80 rounded-3xl p-3 sm:p-6 border border-slate-300 shadow-inner overflow-y-auto overflow-x-auto max-h-[78vh]"
+            className={
+              inBookFullscreen
+                ? 'flex-1 w-full h-full overflow-y-auto overflow-x-auto bg-slate-900 pt-20 pb-10 px-2 sm:px-6'
+                : 'bg-slate-200/80 rounded-3xl p-3 sm:p-6 border border-slate-300 shadow-inner overflow-y-auto overflow-x-auto max-h-[78vh]'
+            }
           >
             {renderMode === 'loading' ? (
-              <div className="py-24 text-center text-slate-600 font-black">
+              <div
+                className={`py-24 text-center font-black ${
+                  inBookFullscreen ? 'text-white/90' : 'text-slate-600'
+                }`}
+              >
                 جاري تحميل صفحات الكتاب وتجهيز أدوات الكتابة...
               </div>
             ) : renderMode === 'error' ? (
@@ -1800,7 +2336,7 @@ export const StudyMaterialsStudio: React.FC<StudyMaterialsStudioProps> = ({
       {showAddModal && (
         <div
           dir="rtl"
-          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-[10000] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4"
         >
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100">

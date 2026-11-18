@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import {
   ArrowRight,
   Presentation,
@@ -133,7 +132,7 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
 
   // Full Explainer Mode State ("اشرح")
   const [explainingDeck, setExplainingDeck] = useState<SavedPresentation | null>(null);
-  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
+  const [isExpandedFullscreen, setIsExpandedFullscreen] = useState(true);
   const [slideIndex, setSlideIndex] = useState(0);
   const [slideDir, setSlideDir] = useState<'next' | 'prev'>('next');
   const [animSeq, setAnimSeq] = useState(0);
@@ -331,6 +330,7 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
     sound.playClick();
     setExplainerError(null);
     setLoadingDeckId(deck.id);
+    setIsExpandedFullscreen(true);
     // Request fullscreen synchronously within user click gesture
     tryEnterFullscreen(document.documentElement);
     // Pre-set full viewport dimensions immediately so first rendered frame fills the screen
@@ -378,13 +378,7 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
     }
   };
 
-  // Track native fullscreen changes and keep responsive 16:9 size filling the entire viewport
-  useEffect(() => {
-    const syncFs = () => setIsNativeFullscreen(Boolean(document.fullscreenElement));
-    document.addEventListener('fullscreenchange', syncFs);
-    return () => document.removeEventListener('fullscreenchange', syncFs);
-  }, []);
-
+  // Keep responsive 16:9 size filling either fullscreen viewport or minimized frame
   useEffect(() => {
     if (!explainingDeck) return;
     const measure = () => {
@@ -405,7 +399,7 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
       window.removeEventListener('resize', measure);
       document.removeEventListener('fullscreenchange', measure);
     };
-  }, [computeStageDims, explainingDeck]);
+  }, [computeStageDims, explainingDeck, isExpandedFullscreen]);
 
   const syncHistoryFlags = useCallback(() => {
     setCanUndo(historyIndexRef.current > 0);
@@ -844,14 +838,18 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
     const activeSettings = isDrawTool ? toolSettings[activeTool] : toolSettings.pen1;
     const activePresets = isDrawTool ? SIZE_PRESETS[activeTool] : SIZE_PRESETS.pen1;
 
-    const explainerNode = (
+    return (
       <div
         dir="rtl"
         style={{ backgroundColor: explainingDeck.theme?.bgHex || '#FFFFFF' }}
-        className="fixed inset-0 z-[9999] w-screen h-[100dvh] overflow-hidden select-none"
+        className={
+          isExpandedFullscreen
+            ? 'fixed inset-0 z-[9999] w-screen h-[100dvh] overflow-hidden select-none'
+            : 'relative max-w-6xl mx-auto my-3 h-[78vh] rounded-3xl border-2 border-slate-300 shadow-2xl overflow-hidden select-none'
+        }
       >
-        {/* TRANSPARENT FLOATING ANNOTATION TOOLBAR AT THE VERY TOP OF THE PAGE */}
-        <div className="fixed top-2 inset-x-0 z-40 px-2 sm:px-4 flex flex-col items-center pointer-events-none">
+        {/* TRANSPARENT FLOATING ANNOTATION TOOLBAR AT THE VERY TOP OF THE PRESENTATION */}
+        <div className="absolute top-2 inset-x-0 z-40 px-2 sm:px-4 flex flex-col items-center pointer-events-none">
           <div
             onClick={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.stopPropagation()}
@@ -877,25 +875,33 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
                 <span>إنهاء</span>
               </button>
 
-              {/* Native Fullscreen Toggle */}
+              {/* Fullscreen Maximize / Minimize Toggle */}
               <button
                 id="btn-toggle-native-fullscreen"
                 type="button"
                 onClick={() => {
                   sound.playClick();
-                  if (isNativeFullscreen) {
+                  if (isExpandedFullscreen) {
+                    setIsExpandedFullscreen(false);
                     tryExitFullscreen();
                   } else {
+                    setIsExpandedFullscreen(true);
                     tryEnterFullscreen(document.documentElement);
                   }
                 }}
-                title={isNativeFullscreen ? 'تصغير من ملء الشاشة' : 'تكبير ملء الشاشة'}
-                className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-900/40 hover:bg-slate-900/75 text-white border border-white/20 font-black text-xs transition-all whitespace-nowrap shrink-0"
+                title={isExpandedFullscreen ? 'تصغير الشاشة' : 'تكبير الشاشة'}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/50 hover:bg-slate-900/85 text-white border border-white/25 font-black text-xs transition-all whitespace-nowrap shrink-0"
               >
-                {isNativeFullscreen ? (
-                  <Minimize2 className="w-3.5 h-3.5" />
+                {isExpandedFullscreen ? (
+                  <>
+                    <Minimize2 className="w-3.5 h-3.5 text-amber-300" />
+                    <span>تصغير الشاشة</span>
+                  </>
                 ) : (
-                  <Maximize2 className="w-3.5 h-3.5" />
+                  <>
+                    <Maximize2 className="w-3.5 h-3.5 text-amber-300" />
+                    <span>تكبير الشاشة</span>
+                  </>
                 )}
               </button>
 
@@ -1256,8 +1262,6 @@ export const PresentationsLibraryView: React.FC<PresentationsLibraryViewProps> =
         </div>
       </div>
     );
-
-    return typeof document !== 'undefined' ? createPortal(explainerNode, document.body) : explainerNode;
   }
 
   // =========================================================================
